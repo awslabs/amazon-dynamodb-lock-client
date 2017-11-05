@@ -111,6 +111,34 @@ You can read the data in the lock without acquiring it, and find out who owns th
 LockItem lock = lockClient.getLock("Moe");
 ```
 
+### Fencing
+By default the lock client relies on lock holders to ensure that they have finished all of their work before their
+lease expires. This can be [hard to guarantee](https://fpj.me/2016/02/10/note-on-fencing-and-distributed-locks/)
+when you account for things like thread schedulers, garbage collectors, and network latency. To protect against
+corruption in the event that a request from an "old" lock holder arrives after its lease has expired and the lock
+has been acquired by a different system, the lock client can optionally associate a unique, monotonically-increasing
+**sequence id** with each lease:
+
+```java
+AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(
+    AmazonDynamoDBLockClientOptions.builder(dynamoDB, "lockTable")
+            .withSequenceIdTracking(true)
+            .withLeaseDuration(10L)
+            .withTimeUnit(TimeUnit.SECONDS)
+            .build());
+
+try (LockItem lock = client.acquireLock(AcquireLockOptions.builder("GloriousLeader").build())) {
+    // Simulate a particularly nasty garbage collection pause.
+    Thread.sleep(30 * 1000);
+
+    // Send a message to all of our followers; they can ignore it if they've already heard from a
+    // leader with a later sequence id.
+    for (String follower : getFollowers()) {
+        sendMessage(follower, "Hello from leader " + lock.getSequenceId() + "!");
+    }
+}
+```
+
 ## How we handle clock skew
 The lock client never stores absolute times in DynamoDB -- only the relative "lease duration" time is stored
 in DynamoDB. The way locks are expired is that a call to acquireLock reads in the current lock, checks the
