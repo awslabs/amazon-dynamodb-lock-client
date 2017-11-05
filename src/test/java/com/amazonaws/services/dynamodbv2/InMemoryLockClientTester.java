@@ -69,6 +69,7 @@ public class InMemoryLockClientTester {
     protected AmazonDynamoDB dynamoDBMock;
     protected AmazonDynamoDBLockClient lockClient;
     protected AmazonDynamoDBLockClient lockClientWithHeartbeating;
+    protected AmazonDynamoDBLockClient lockClientWithSequenceIdTracking;
     protected AmazonDynamoDBLockClient shortLeaseLockClient;
     protected AmazonDynamoDBLockClient lockClientNoTable;
     protected AmazonDynamoDBLockClientOptions lockClient1Options;
@@ -95,6 +96,9 @@ public class InMemoryLockClientTester {
         this.lockClientWithHeartbeating = new AmazonDynamoDBLockClient(
             new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER).withLeaseDuration(3L).withHeartbeatPeriod(1L)
                 .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(true).build());
+        this.lockClientWithSequenceIdTracking = new AmazonDynamoDBLockClient(
+            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+                .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).withSequenceIdTracking(true).build());
         this.lockClientNoTable = new AmazonDynamoDBLockClient(
             new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, "doesNotExist", INTEGRATION_TESTER).withLeaseDuration(3L).withHeartbeatPeriod(1L)
                 .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).build());

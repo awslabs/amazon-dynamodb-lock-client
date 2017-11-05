@@ -31,6 +31,7 @@ import java.util.function.Function;
  */
 public class AmazonDynamoDBLockClientOptions {
     protected static final String DEFAULT_PARTITION_KEY_NAME = "key";
+    protected static final boolean DEFAULT_TRACK_SEQUENCE_IDS = false;
     protected static final Long DEFAULT_LEASE_DURATION = 20L;
     protected static final Long DEFAULT_HEARTBEAT_PERIOD = 5L;
     protected static final TimeUnit DEFAULT_TIME_UNIT = TimeUnit.SECONDS;
@@ -41,6 +42,7 @@ public class AmazonDynamoDBLockClientOptions {
     private final String partitionKeyName;
     private final Optional<String> sortKeyName;
     private final String ownerName;
+    private final boolean trackSequenceIds;
     private final Long leaseDuration;
     private final Long heartbeatPeriod;
     private final TimeUnit timeUnit;
@@ -58,6 +60,7 @@ public class AmazonDynamoDBLockClientOptions {
         private String partitionKeyName;
         private Optional<String> sortKeyName;
         private String ownerName;
+        private boolean trackSequenceIds;
         private Long leaseDuration;
         private Long heartbeatPeriod;
         private TimeUnit timeUnit;
@@ -88,6 +91,7 @@ public class AmazonDynamoDBLockClientOptions {
             this.dynamoDBClient = dynamoDBClient;
             this.tableName = tableName;
             this.partitionKeyName = DEFAULT_PARTITION_KEY_NAME;
+            this.trackSequenceIds = DEFAULT_TRACK_SEQUENCE_IDS;
             this.leaseDuration = DEFAULT_LEASE_DURATION;
             this.heartbeatPeriod = DEFAULT_HEARTBEAT_PERIOD;
             this.timeUnit = DEFAULT_TIME_UNIT;
@@ -125,6 +129,22 @@ public class AmazonDynamoDBLockClientOptions {
          */
         public AmazonDynamoDBLockClientOptionsBuilder withOwnerName(final String ownerName) {
             this.ownerName = ownerName;
+            return this;
+        }
+
+        /**
+         * @param trackSequenceIds True to track sequence IDs for locks acquired by this client.
+         *                         If sequence ID tracking is enabled, a monotonically-increasing
+         *                         sequence ID is associated with each lock and incremented whenever
+         *                         the lock is acquired. The sequence ID can be included in write
+         *                         requests issued while holding the lock, and used by downstream
+         *                         systems to detect and reject out-of-order writes from a system
+         *                         which used to hold the lock but no longer does when the write
+         *                         arrives.
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AmazonDynamoDBLockClientOptionsBuilder withSequenceIdTracking(final boolean trackSequenceIds) {
+            this.trackSequenceIds = trackSequenceIds;
             return this;
         }
 
@@ -185,15 +205,15 @@ public class AmazonDynamoDBLockClientOptions {
         public AmazonDynamoDBLockClientOptions build() {
             Objects.requireNonNull(this.tableName, "Table Name must not be null");
             Objects.requireNonNull(this.ownerName, "Owner Name must not be null");
-            return new AmazonDynamoDBLockClientOptions(this.dynamoDBClient, this.tableName, this.partitionKeyName, this.sortKeyName, this.ownerName, this.leaseDuration,
-                this.heartbeatPeriod, this.timeUnit, this.createHeartbeatBackgroundThread, this.namedThreadCreator);
+            return new AmazonDynamoDBLockClientOptions(this.dynamoDBClient, this.tableName, this.partitionKeyName, this.sortKeyName, this.ownerName, this.trackSequenceIds,
+                    this.leaseDuration, this.heartbeatPeriod, this.timeUnit, this.createHeartbeatBackgroundThread, this.namedThreadCreator);
         }
 
         @Override
         public String toString() {
             return "AmazonDynamoDBLockClientOptionsBuilder(dynamoDBClient=" + this.dynamoDBClient + ", tableName=" + this.tableName + ", partitionKeyName=" + this.partitionKeyName
-                + ", sortKeyName=" + this.sortKeyName + ", ownerName=" + this.ownerName + ", leaseDuration=" + this.leaseDuration + ", heartbeatPeriod=" + this.heartbeatPeriod
-                + ", timeUnit=" + this.timeUnit + ", createHeartbeatBackgroundThread=" + this.createHeartbeatBackgroundThread + ")";
+                + ", sortKeyName=" + this.sortKeyName + ", ownerName=" + this.ownerName + ", trackSequenceIds=" + trackSequenceIds + ", leaseDuration=" + this.leaseDuration
+                + ", heartbeatPeriod=" + this.heartbeatPeriod + ", timeUnit=" + this.timeUnit + ", createHeartbeatBackgroundThread=" + this.createHeartbeatBackgroundThread + ")";
         }
     }
 
@@ -211,13 +231,14 @@ public class AmazonDynamoDBLockClientOptions {
     }
 
     private AmazonDynamoDBLockClientOptions(final AmazonDynamoDB dynamoDBClient, final String tableName, final String partitionKeyName, final Optional<String> sortKeyName,
-        final String ownerName, final Long leaseDuration, final Long heartbeatPeriod, final TimeUnit timeUnit, final Boolean createHeartbeatBackgroundThread,
-        final Function<String, ThreadFactory> namedThreadCreator) {
+        final String ownerName, final boolean trackSequenceIds, final Long leaseDuration, final Long heartbeatPeriod, final TimeUnit timeUnit,
+        final Boolean createHeartbeatBackgroundThread, final Function<String, ThreadFactory> namedThreadCreator) {
         this.dynamoDBClient = dynamoDBClient;
         this.tableName = tableName;
         this.partitionKeyName = partitionKeyName;
         this.sortKeyName = sortKeyName;
         this.ownerName = ownerName;
+        this.trackSequenceIds = trackSequenceIds;
         this.leaseDuration = leaseDuration;
         this.heartbeatPeriod = heartbeatPeriod;
         this.timeUnit = timeUnit;
@@ -259,6 +280,13 @@ public class AmazonDynamoDBLockClientOptions {
      */
     String getOwnerName() {
         return this.ownerName;
+    }
+
+    /**
+     * @return True to track a monotonically-increasing sequence ID for each lock.
+     */
+    boolean getTrackSequenceIds() {
+        return trackSequenceIds;
     }
 
     /**

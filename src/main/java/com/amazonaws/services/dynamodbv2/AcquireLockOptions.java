@@ -34,7 +34,7 @@ public class AcquireLockOptions {
     private final Optional<String> sortKey;
     private final Optional<ByteBuffer> data;
     private final Boolean replaceData;
-    private final Boolean deleteLockOnRelease;
+    private final Optional<Boolean> deleteLockOnRelease;
     private final Long refreshPeriod;
     private final Long additionalTimeToWaitForLock;
     private final TimeUnit timeUnit;
@@ -53,7 +53,7 @@ public class AcquireLockOptions {
         private Optional<String> sortKey;
         private Optional<ByteBuffer> data;
         private Boolean replaceData;
-        private Boolean deleteLockOnRelease;
+        private Optional<Boolean> deleteLockOnRelease;
         private Long refreshPeriod;
         private Long additionalTimeToWaitForLock;
         private TimeUnit timeUnit;
@@ -71,7 +71,7 @@ public class AcquireLockOptions {
             this.requestMetricCollector = Optional.empty();
             this.data = Optional.empty();
             this.replaceData = true;
-            this.deleteLockOnRelease = true;
+            this.deleteLockOnRelease = Optional.empty();
         }
 
         /**
@@ -116,7 +116,7 @@ public class AcquireLockOptions {
          * @return a reference to this builder for fluent method chaining
          */
         public AcquireLockOptionsBuilder withDeleteLockOnRelease(final Boolean deleteLockOnRelease) {
-            this.deleteLockOnRelease = deleteLockOnRelease;
+            this.deleteLockOnRelease = Optional.ofNullable(deleteLockOnRelease);
             return this;
         }
 
@@ -274,7 +274,7 @@ public class AcquireLockOptions {
     }
 
     private AcquireLockOptions(final String partitionKey, final Optional<String> sortKey, final Optional<ByteBuffer> data, final Boolean replaceData,
-        final Boolean deleteLockOnRelease, final Long refreshPeriod, final Long additionalTimeToWaitForLock, final TimeUnit timeUnit,
+        final Optional<Boolean> deleteLockOnRelease, final Long refreshPeriod, final Long additionalTimeToWaitForLock, final TimeUnit timeUnit,
         final Map<String, AttributeValue> additionalAttributes, final Optional<SessionMonitor> sessionMonitor,
         final Optional<RequestMetricCollector> requestMetricCollector) {
         this.partitionKey = partitionKey;
@@ -306,7 +306,7 @@ public class AcquireLockOptions {
         return this.replaceData;
     }
 
-    Boolean getDeleteLockOnRelease() {
+    Optional<Boolean> getDeleteLockOnRelease() {
         return this.deleteLockOnRelease;
     }
 
