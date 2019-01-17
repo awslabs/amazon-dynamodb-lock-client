@@ -7,6 +7,8 @@ certain length. DynamoDB Lock Client is an open-source project that will be
 supported by the community. Please create issues in the GitHub repository with
 questions.
 
+[![Build Status](https://travis-ci.org/awslabs/dynamodb-lock-client.svg?branch=master)](https://travis-ci.org/awslabs/dynamodb-lock-client)
+
 ## Use cases
 A common use case for this lock client is:
 let's say you have a distributed system that needs to periodically do work on a given campaign
