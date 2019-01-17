@@ -16,8 +16,8 @@ package com.amazonaws.services.dynamodbv2;
 
 import java.util.Optional;
 
-import com.amazonaws.metrics.RequestMetricCollector;
-import com.amazonaws.services.dynamodbv2.model.ProvisionedThroughput;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughput;
 
 /**
  * An options class for the createDynamoDBTable method in the lock client. This
@@ -28,38 +28,34 @@ import com.amazonaws.services.dynamodbv2.model.ProvisionedThroughput;
  * @author slutsker
  */
 public class CreateDynamoDBTableOptions {
-    private final AmazonDynamoDB dynamoDBClient;
+    private final DynamoDbClient dynamoDBClient;
     private final ProvisionedThroughput provisionedThroughput;
     private final String tableName;
     private final String partitionKeyName;
     private final Optional<String> sortKeyName;
-    private final Optional<RequestMetricCollector> requestMetricCollector;
 
-    CreateDynamoDBTableOptions(final AmazonDynamoDB dynamoDBClient, final ProvisionedThroughput provisionedThroughput, final String tableName, final String partitionKeyName,
-        final Optional<String> sortKeyName, final Optional<RequestMetricCollector> requestMetricCollector) {
+    CreateDynamoDBTableOptions(final DynamoDbClient dynamoDBClient, final ProvisionedThroughput provisionedThroughput, final String tableName, final String partitionKeyName,
+        final Optional<String> sortKeyName) {
         this.dynamoDBClient = dynamoDBClient;
         this.provisionedThroughput = provisionedThroughput;
         this.tableName = tableName;
         this.partitionKeyName = partitionKeyName;
         this.sortKeyName = sortKeyName;
-        this.requestMetricCollector = requestMetricCollector;
     }
 
     public static class CreateDynamoDBTableOptionsBuilder {
-        private AmazonDynamoDB dynamoDBClient;
+        private DynamoDbClient dynamoDBClient;
         private ProvisionedThroughput provisionedThroughput;
         private String tableName;
         private String partitionKeyName;
         private Optional<String> sortKeyName;
-        private Optional<RequestMetricCollector> requestMetricCollector;
 
-        CreateDynamoDBTableOptionsBuilder(final AmazonDynamoDB dynamoDBClient, final ProvisionedThroughput provisionedThroughput, final String tableName) {
+        CreateDynamoDBTableOptionsBuilder(final DynamoDbClient dynamoDBClient, final ProvisionedThroughput provisionedThroughput, final String tableName) {
             this.dynamoDBClient = dynamoDBClient;
             this.provisionedThroughput = provisionedThroughput;
             this.tableName = tableName;
             this.partitionKeyName = AmazonDynamoDBLockClientOptions.DEFAULT_PARTITION_KEY_NAME;
             this.sortKeyName = Optional.empty();
-            this.requestMetricCollector = Optional.empty();
         }
 
         /**
@@ -80,25 +76,14 @@ public class CreateDynamoDBTableOptions {
             return this;
         }
 
-        /**
-         * @param requestMetricCollector Request metrics collector, optionally.
-         * @return this
-         */
-        public CreateDynamoDBTableOptionsBuilder withRequestMetricCollector(final RequestMetricCollector requestMetricCollector) {
-            this.requestMetricCollector = Optional.ofNullable(requestMetricCollector);
-            return this;
-        }
-
         public CreateDynamoDBTableOptions build() {
-            return new CreateDynamoDBTableOptions(this.dynamoDBClient, this.provisionedThroughput, this.tableName, this.partitionKeyName, this.sortKeyName,
-                this.requestMetricCollector);
+            return new CreateDynamoDBTableOptions(this.dynamoDBClient, this.provisionedThroughput, this.tableName, this.partitionKeyName, this.sortKeyName);
         }
 
         @Override
         public java.lang.String toString() {
             return "CreateDynamoDBTableOptions.CreateDynamoDBTableOptionsBuilder(dynamoDBClient=" + this.dynamoDBClient + ", provisionedThroughput=" + this.provisionedThroughput
-                + ", tableName=" + this.tableName + ", partitionKeyName=" + this.partitionKeyName + ", sortKeyName=" + this.sortKeyName + ", requestMetricCollector="
-                + this.requestMetricCollector + ")";
+                + ", tableName=" + this.tableName + ", partitionKeyName=" + this.partitionKeyName + ", sortKeyName=" + this.sortKeyName + ")";
         }
     }
 
@@ -113,11 +98,11 @@ public class CreateDynamoDBTableOptions {
      * @param tableName             The table name to create.
      * @return a builder for CreateDynamoDBTableOptions instances
      */
-    public static CreateDynamoDBTableOptionsBuilder builder(final AmazonDynamoDB dynamoDBClient, final ProvisionedThroughput provisionedThroughput, final String tableName) {
+    public static CreateDynamoDBTableOptionsBuilder builder(final DynamoDbClient dynamoDBClient, final ProvisionedThroughput provisionedThroughput, final String tableName) {
         return new CreateDynamoDBTableOptionsBuilder(dynamoDBClient, provisionedThroughput, tableName);
     }
 
-    AmazonDynamoDB getDynamoDBClient() {
+    DynamoDbClient getDynamoDBClient() {
         return this.dynamoDBClient;
     }
 
@@ -135,9 +120,5 @@ public class CreateDynamoDBTableOptions {
 
     Optional<String> getSortKeyName() {
         return this.sortKeyName;
-    }
-
-    Optional<RequestMetricCollector> getRequestMetricCollector() {
-        return this.requestMetricCollector;
     }
 }

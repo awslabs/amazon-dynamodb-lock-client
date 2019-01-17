@@ -14,9 +14,9 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
-import java.util.Map;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
-import com.amazonaws.services.dynamodbv2.model.AttributeValue;
+import java.util.Map;
 
 interface LockItemFactory {
     LockItem create(Map<String, AttributeValue> item);

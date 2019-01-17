@@ -1,5 +1,5 @@
 /**
- * Copyright 2013-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2013-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * <p>
  * Licensed under the Amazon Software License (the "License").
  * You may not use this file except in compliance with the License.
@@ -19,25 +19,22 @@ package com.amazonaws.services.dynamodbv2;
  * Start DynamoDB Local on port 4567 for this example (will happen automatically
  * when running mvn clean install verify -Pintegration-tests).
  *
- * @author <a href="mailto:amcp@amazon.co.jp">Alexander Patrikalakis</a> 2017-05-05
+ * @author <a href="mailto:amcp@amazon.com">Alexander Patrikalakis</a> 2017-05-05
  */
 import java.io.IOException;
+import java.net.URI;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.Test;
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-import com.amazonaws.client.builder.AwsClientBuilder;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
 public class LockClientExample {
-    private static final AwsClientBuilder.EndpointConfiguration DYNAMODB_LOCAL_ENDPOINT =
-            new AwsClientBuilder.EndpointConfiguration("http://localhost:4567",
-                    "us-west-2");
     @Test
     public void usageExample() throws InterruptedException, IOException {
         // Inject client configuration to the builder like the endpoint and signing region
-        final AmazonDynamoDB dynamoDB = AmazonDynamoDBClientBuilder.standard()
-                .withEndpointConfiguration(DYNAMODB_LOCAL_ENDPOINT)
-                .withCredentials(new DefaultAWSCredentialsProviderChain())
+        final DynamoDbClient dynamoDB = DynamoDbClient.builder()
+                .region(Region.US_WEST_2).endpointOverride(URI.create("http://localhost:4567"))
                 .build();
         // Whether or not to create a heartbeating background thread
         final boolean createHeartbeatBackgroundThread = true;

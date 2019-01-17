@@ -28,7 +28,7 @@ this artifact in Maven in your pom.xml.
 <dependency>
     <groupId>com.amazonaws</groupId>
     <artifactId>dynamodb-lock-client</artifactId>
-    <version>1.0.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
@@ -41,22 +41,19 @@ explain how the library works. Here is some example code to get you started:
 
 ```java
 import java.io.IOException;
+import java.net.URI;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.Test;
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-import com.amazonaws.client.builder.AwsClientBuilder;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
 public class LockClientExample {
-    private static final AwsClientBuilder.EndpointConfiguration DYNAMODB_LOCAL_ENDPOINT =
-            new AwsClientBuilder.EndpointConfiguration("http://localhost:4567",
-                    "us-west-2");
     @Test
     public void usageExample() throws InterruptedException, IOException {
         // Inject client configuration to the builder like the endpoint and signing region
-        final AmazonDynamoDB dynamoDB = AmazonDynamoDBClientBuilder.standard()
-                .withEndpointConfiguration(DYNAMODB_LOCAL_ENDPOINT)
-                .withCredentials(new DefaultAWSCredentialsProviderChain())
+        final DynamoDbClient dynamoDB = DynamoDbClient.builder()
+                .region(Region.US_WEST_2).endpointOverride(URI.create("http://localhost:4567"))
                 .build();
         // Whether or not to create a heartbeating background thread
         final boolean createHeartbeatBackgroundThread = true;

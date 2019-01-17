@@ -36,37 +36,38 @@ import java.util.function.Function;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
+import com.amazonaws.services.dynamodbv2.model.LockCurrentlyUnavailableException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.http.HttpStatus;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.AmazonServiceException;
-import com.amazonaws.metrics.RequestMetricCollector;
-import com.amazonaws.annotation.ThreadSafe;
 import com.amazonaws.services.dynamodbv2.GetLockOptions.GetLockOptionsBuilder;
-import com.amazonaws.services.dynamodbv2.model.AttributeDefinition;
-import com.amazonaws.services.dynamodbv2.model.AttributeValue;
-import com.amazonaws.services.dynamodbv2.model.ConditionalCheckFailedException;
-import com.amazonaws.services.dynamodbv2.model.CreateTableRequest;
-import com.amazonaws.services.dynamodbv2.model.DeleteItemRequest;
-import com.amazonaws.services.dynamodbv2.model.DescribeTableRequest;
-import com.amazonaws.services.dynamodbv2.model.DescribeTableResult;
-import com.amazonaws.services.dynamodbv2.model.GetItemRequest;
-import com.amazonaws.services.dynamodbv2.model.GetItemResult;
-import com.amazonaws.services.dynamodbv2.model.KeySchemaElement;
-import com.amazonaws.services.dynamodbv2.model.KeyType;
-import com.amazonaws.services.dynamodbv2.model.LockCurrentlyUnavailableException;
 import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
 import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
-import com.amazonaws.services.dynamodbv2.model.ProvisionedThroughputExceededException;
-import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
-import com.amazonaws.services.dynamodbv2.model.ResourceNotFoundException;
-import com.amazonaws.services.dynamodbv2.model.ScalarAttributeType;
-import com.amazonaws.services.dynamodbv2.model.ScanRequest;
-import com.amazonaws.services.dynamodbv2.model.TableStatus;
-import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
+import software.amazon.awssdk.annotations.ThreadSafe;
+import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.http.HttpStatusCode;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
+import software.amazon.awssdk.services.dynamodb.model.CreateTableRequest;
+import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.DescribeTableRequest;
+import software.amazon.awssdk.services.dynamodb.model.DescribeTableResponse;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
+import software.amazon.awssdk.services.dynamodb.model.KeyType;
+import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughputExceededException;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
+import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
+import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
+import software.amazon.awssdk.services.dynamodb.model.TableStatus;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
 /**
  * <p>
@@ -220,7 +221,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         availableStatuses.add(TableStatus.UPDATING);
     }
 
-    protected final AmazonDynamoDB dynamoDB;
+    protected final DynamoDbClient dynamoDB;
     protected final String tableName;
     private final String partitionKeyName;
     private final Optional<String> sortKeyName;
@@ -241,7 +242,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     protected static final String RECORD_VERSION_NUMBER = "recordVersionNumber";
     protected static final String IS_RELEASED = "isReleased";
     protected static final String IS_RELEASED_VALUE = "1";
-    protected static final AttributeValue IS_RELEASED_ATTRIBUTE_VALUE = new AttributeValue(IS_RELEASED_VALUE);
+    protected static final AttributeValue IS_RELEASED_ATTRIBUTE_VALUE = AttributeValue.builder().s(IS_RELEASED_VALUE).build();
     protected static volatile AtomicInteger lockClientId = new AtomicInteger(0);
     protected static final Boolean IS_RELEASED_INDICATOR = true;
     /*
@@ -296,8 +297,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      */
     public boolean lockTableExists() {
         try {
-            final DescribeTableResult result = this.dynamoDB.describeTable(new DescribeTableRequest().withTableName(this.tableName));
-            return availableStatuses.contains(TableStatus.fromValue(result.getTable().getTableStatus()));
+            final DescribeTableResponse result
+                    = this.dynamoDB.describeTable(DescribeTableRequest.builder().tableName(tableName).build());
+            return availableStatuses.contains(result.table().tableStatus());
         } catch (final ResourceNotFoundException e) {
             // This exception indicates the table doesn't exist.
             return false;
@@ -340,31 +342,37 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         Objects.requireNonNull(createDynamoDBTableOptions.getProvisionedThroughput(), "Provisioned throughput cannot be null");
         Objects.requireNonNull(createDynamoDBTableOptions.getPartitionKeyName(), "Hash Key Name cannot be null");
         Objects.requireNonNull(createDynamoDBTableOptions.getSortKeyName(), "Sort Key Name cannot be null");
-        final KeySchemaElement partitionKeyElement = new KeySchemaElement();
-        partitionKeyElement.setAttributeName(createDynamoDBTableOptions.getPartitionKeyName());
-        partitionKeyElement.setKeyType(KeyType.HASH);
+        final KeySchemaElement partitionKeyElement = KeySchemaElement.builder()
+                .attributeName(createDynamoDBTableOptions.getPartitionKeyName()).keyType(KeyType.HASH)
+                .build();
 
         final List<KeySchemaElement> keySchema = new ArrayList<>();
         keySchema.add(partitionKeyElement);
 
         final Collection<AttributeDefinition> attributeDefinitions = new ArrayList<>();
-        attributeDefinitions.add(new AttributeDefinition().withAttributeName(createDynamoDBTableOptions.getPartitionKeyName()).withAttributeType(ScalarAttributeType.S));
+        attributeDefinitions.add(AttributeDefinition.builder()
+                .attributeName(createDynamoDBTableOptions.getPartitionKeyName())
+                .attributeType(ScalarAttributeType.S)
+                .build());
 
         if (createDynamoDBTableOptions.getSortKeyName().isPresent()) {
-            final KeySchemaElement sortKeyElement = new KeySchemaElement();
-            sortKeyElement.setAttributeName(createDynamoDBTableOptions.getSortKeyName().get());
-            sortKeyElement.setKeyType(KeyType.RANGE);
+            final KeySchemaElement sortKeyElement = KeySchemaElement.builder()
+                    .attributeName(createDynamoDBTableOptions.getSortKeyName().get())
+                    .keyType(KeyType.RANGE)
+                    .build();
             keySchema.add(sortKeyElement);
-            attributeDefinitions.add(new AttributeDefinition().withAttributeName(createDynamoDBTableOptions.getSortKeyName().get()).withAttributeType(ScalarAttributeType.S));
+            attributeDefinitions.add(AttributeDefinition.builder()
+                    .attributeName(createDynamoDBTableOptions.getSortKeyName().get())
+                    .attributeType(ScalarAttributeType.S)
+                    .build());
         }
 
-        final CreateTableRequest createTableRequest = new CreateTableRequest(createDynamoDBTableOptions.getTableName(), keySchema);
-        createTableRequest.setProvisionedThroughput(createDynamoDBTableOptions.getProvisionedThroughput());
-        createTableRequest.setAttributeDefinitions(attributeDefinitions);
-
-        if (createDynamoDBTableOptions.getRequestMetricCollector().isPresent()) {
-            createTableRequest.setRequestMetricCollector(createDynamoDBTableOptions.getRequestMetricCollector().get());
-        }
+        final CreateTableRequest createTableRequest = CreateTableRequest.builder()
+                .tableName(createDynamoDBTableOptions.getTableName())
+                .keySchema(keySchema)
+                .provisionedThroughput(createDynamoDBTableOptions.getProvisionedThroughput())
+                .attributeDefinitions(attributeDefinitions)
+                .build();
 
         createDynamoDBTableOptions.getDynamoDBClient().createTable(createTableRequest);
     }
@@ -436,8 +444,10 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         LockItem lockTryingToBeAcquired = null;
         boolean alreadySleptOnceForOneLeasePeriod = false;
 
-        final GetLockOptions getLockOptions = new GetLockOptions.GetLockOptionsBuilder(key).withSortKey(sortKey.orElse(null)).withDeleteLockOnRelease(deleteLockOnRelease)
-            .withRequestMetricCollector(options.getRequestMetricCollector().orElse(null)).build();
+        final GetLockOptions getLockOptions = new GetLockOptions.GetLockOptionsBuilder(key)
+                .withSortKey(sortKey.orElse(null))
+                .withDeleteLockOnRelease(deleteLockOnRelease)
+                .build();
 
         while (true) {
             try {
@@ -470,13 +480,13 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
                     final Map<String, AttributeValue> item = new HashMap<>();
                     item.putAll(options.getAdditionalAttributes());
-                    item.put(this.partitionKeyName, new AttributeValue().withS(key));
-                    item.put(OWNER_NAME, new AttributeValue().withS(this.ownerName));
-                    item.put(LEASE_DURATION, new AttributeValue().withS(String.valueOf(this.leaseDurationInMilliseconds)));
+                    item.put(this.partitionKeyName, AttributeValue.builder().s(key).build());
+                    item.put(OWNER_NAME, AttributeValue.builder().s(this.ownerName).build());
+                    item.put(LEASE_DURATION, AttributeValue.builder().s(String.valueOf(this.leaseDurationInMilliseconds)).build());
                     final String recordVersionNumber = this.generateRecordVersionNumber();
-                    item.put(RECORD_VERSION_NUMBER, new AttributeValue().withS(String.valueOf(recordVersionNumber)));
-                    sortKeyName.ifPresent(sortKeyName -> item.put(sortKeyName, new AttributeValue().withS(sortKey.get())));
-                    newLockData.ifPresent(byteBuffer -> item.put(DATA, new AttributeValue().withB(byteBuffer)));
+                    item.put(RECORD_VERSION_NUMBER, AttributeValue.builder().s(String.valueOf(recordVersionNumber)).build());
+                    sortKeyName.ifPresent(sortKeyName -> item.put(sortKeyName, AttributeValue.builder().s(sortKey.get()).build()));
+                    newLockData.ifPresent(byteBuffer -> item.put(DATA, AttributeValue.builder().b(SdkBytes.fromByteBuffer(byteBuffer)).build()));
 
                     //if the existing lock does not exist or exists and is released
                     if (!existingLock.isPresent() && !options.getAcquireOnlyIfLockAlreadyExists()) {
@@ -526,12 +536,12 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                      */
                     logger.debug("Maximum allowed provisioned throughput for the table exceeded", provisionedThroughputExceededException);
                     throw new LockNotGrantedException("Could not acquire lock because provisioned throughput for the table exceeded", provisionedThroughputExceededException);
-                } catch (final AmazonClientException amazonClientException) {
+                } catch (final SdkClientException sdkClientException) {
                     /* This indicates that we were unable to successfully connect and make a service call to DDB. Often
                      * indicative of a network failure, such as a socket timeout. We retry if still within the time we
                      * can wait to acquire the lock.
                      */
-                    logger.warn("Could not acquire lock because of a client side failure in talking to DDB", amazonClientException);
+                    logger.warn("Could not acquire lock because of a client side failure in talking to DDB", sdkClientException);
                 }
             } catch (final LockNotGrantedException x) {
                 if (LockClientUtils.INSTANCE.millisecondTime() - currentTimeMillis > millisecondsToWait) {
@@ -553,7 +563,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         final String conditionalExpression;
         final Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
         final boolean updateExistingLockRecord = options.getUpdateExistingLockRecord();
-        expressionAttributeValues.put(RVN_VALUE_EXPRESSION_VARIABLE, new AttributeValue(existingLock.get().getRecordVersionNumber()));
+        expressionAttributeValues.put(RVN_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(existingLock.get().getRecordVersionNumber()).build());
         final Map<String, String> expressionAttributeNames = new HashMap<>();
         expressionAttributeNames.put(PK_PATH_EXPRESSION_VARIABLE, partitionKeyName);
         expressionAttributeNames.put(RVN_PATH_EXPRESSION_VARIABLE, RECORD_VERSION_NUMBER);
@@ -572,19 +582,18 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             }
             final String updateExpression = getUpdateExpressionAndUpdateNameValueMaps(item, expressionAttributeNames, expressionAttributeValues);
 
-            final UpdateItemRequest updateItemRequest = new UpdateItemRequest().withTableName(tableName).withKey(getItemKeys(existingLock.get()))
-                    .withUpdateExpression(updateExpression).withExpressionAttributeNames(expressionAttributeNames)
-                    .withExpressionAttributeValues(expressionAttributeValues).withConditionExpression(conditionalExpression);
+            final UpdateItemRequest updateItemRequest = UpdateItemRequest.builder().tableName(tableName).key(getItemKeys(existingLock.get()))
+                    .updateExpression(updateExpression).expressionAttributeNames(expressionAttributeNames)
+                    .expressionAttributeValues(expressionAttributeValues).conditionExpression(conditionalExpression).build();
             logger.trace("Acquiring an existing lock whose revisionVersionNumber did not change for " + partitionKeyName + " partitionKeyName=" + key + ", " + this.sortKeyName + "=" + sortKey);
             return updateItemAndStartSessionMonitor(options, key, sortKey, deleteLockOnRelease, sessionMonitor, newLockData, recordVersionNumber, updateItemRequest);
         } else {
-            final PutItemRequest putItemRequest = new PutItemRequest().withItem(item).withTableName(tableName).withConditionExpression(conditionalExpression)
-                    .withExpressionAttributeNames(expressionAttributeNames).withExpressionAttributeValues(expressionAttributeValues);
+            final PutItemRequest putItemRequest = PutItemRequest.builder().item(item).tableName(tableName).conditionExpression(conditionalExpression)
+                    .expressionAttributeNames(expressionAttributeNames).expressionAttributeValues(expressionAttributeValues).build();
 
             logger.trace("Acquiring an existing lock whose revisionVersionNumber did not change for " + partitionKeyName + " partitionKeyName=" + key + ", " + this.sortKeyName + "=" + sortKey);
             return putLockItemAndStartSessionMonitor(options, key, sortKey, deleteLockOnRelease, sessionMonitor, newLockData, recordVersionNumber, putItemRequest);
         }
-
     }
 
     private LockItem upsertAndMonitorReleasedLock(AcquireLockOptions options, String key, Optional<String> sortKey, boolean
@@ -599,7 +608,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         final Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
 
         if (consistentLockData) {
-            expressionAttributeValues.put(RVN_VALUE_EXPRESSION_VARIABLE, new AttributeValue(existingLock.get().getRecordVersionNumber()));
+            expressionAttributeValues.put(RVN_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(existingLock.get().getRecordVersionNumber()).build());
             expressionAttributeNames.put(RVN_PATH_EXPRESSION_VARIABLE, RECORD_VERSION_NUMBER);
         }
         expressionAttributeNames.put(PK_PATH_EXPRESSION_VARIABLE, partitionKeyName);
@@ -630,15 +639,15 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             final String updateExpression = getUpdateExpressionAndUpdateNameValueMaps(item, expressionAttributeNames, expressionAttributeValues)
                     + REMOVE_IS_RELEASED_UPDATE_EXPRESSION;
 
-            final UpdateItemRequest updateItemRequest = new UpdateItemRequest().withTableName(tableName).withKey(getItemKeys(existingLock.get()))
-                    .withUpdateExpression(updateExpression).withExpressionAttributeNames(expressionAttributeNames)
-                    .withExpressionAttributeValues(expressionAttributeValues).withConditionExpression(conditionalExpression);
+            final UpdateItemRequest updateItemRequest = UpdateItemRequest.builder().tableName(tableName).key(getItemKeys(existingLock.get()))
+                    .updateExpression(updateExpression).expressionAttributeNames(expressionAttributeNames)
+                    .expressionAttributeValues(expressionAttributeValues).conditionExpression(conditionalExpression).build();
             logger.trace("Acquiring an existing released whose revisionVersionNumber did not change for " + partitionKeyName + " " +
                                  "partitionKeyName=" + key + ", " + this.sortKeyName + "=" + sortKey);
             return updateItemAndStartSessionMonitor(options, key, sortKey, deleteLockOnRelease, sessionMonitor, newLockData, recordVersionNumber, updateItemRequest);
         } else {
-            final PutItemRequest putItemRequest = new PutItemRequest().withItem(item).withTableName(tableName).withConditionExpression(conditionalExpression)
-                    .withExpressionAttributeNames(expressionAttributeNames).withExpressionAttributeValues(expressionAttributeValues);
+            final PutItemRequest putItemRequest = PutItemRequest.builder().item(item).tableName(tableName).conditionExpression(conditionalExpression)
+                    .expressionAttributeNames(expressionAttributeNames).expressionAttributeValues(expressionAttributeValues).build();
 
             logger.trace("Acquiring an existing released lock whose revisionVersionNumber did not change for " + partitionKeyName + " " +
                                  "partitionKeyName=" + key + ", " + this.sortKeyName + "=" + sortKey);
@@ -651,9 +660,6 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private LockItem updateItemAndStartSessionMonitor(AcquireLockOptions options, String key, Optional<String> sortKey, boolean deleteLockOnRelease,
                                                       Optional<SessionMonitor> sessionMonitor, Optional<ByteBuffer> newLockData, String recordVersionNumber, UpdateItemRequest updateItemRequest) {
         final long lastUpdatedTime = LockClientUtils.INSTANCE.millisecondTime();
-        if (options.getRequestMetricCollector().isPresent()) {
-            updateItemRequest.setRequestMetricCollector(options.getRequestMetricCollector().get());
-        }
         this.dynamoDB.updateItem(updateItemRequest);
         final LockItem lockItem =
                 new LockItem(this, key, sortKey, newLockData, deleteLockOnRelease, this.ownerName, this.leaseDurationInMilliseconds, lastUpdatedTime,
@@ -700,15 +706,15 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             }
             final Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
             final String updateExpression = getUpdateExpressionAndUpdateNameValueMaps(item, expressionAttributeNames, expressionAttributeValues);
-            final UpdateItemRequest updateItemRequest = new UpdateItemRequest().withTableName(tableName).withKey(getKeys(key, sortKey))
-                    .withUpdateExpression(updateExpression).withExpressionAttributeNames(expressionAttributeNames)
-                    .withExpressionAttributeValues(expressionAttributeValues).withConditionExpression(conditionalExpression);
+            final UpdateItemRequest updateItemRequest = UpdateItemRequest.builder().tableName(tableName).key(getKeys(key, sortKey))
+                    .updateExpression(updateExpression).expressionAttributeNames(expressionAttributeNames)
+                    .expressionAttributeValues(expressionAttributeValues).conditionExpression(conditionalExpression).build();
             logger.trace("Acquiring a new lock on " + partitionKeyName + "=" + key + ", " + this.sortKeyName + "=" + sortKey);
             return updateItemAndStartSessionMonitor(options, key, sortKey, deleteLockOnRelease, sessionMonitor, newLockData, recordVersionNumber, updateItemRequest);
         } else {
-            final PutItemRequest putItemRequest = new PutItemRequest().withItem(item).withTableName(tableName)
-                    .withConditionExpression(conditionalExpression)
-                    .withExpressionAttributeNames(expressionAttributeNames);
+            final PutItemRequest putItemRequest = PutItemRequest.builder().item(item).tableName(tableName)
+                    .conditionExpression(conditionalExpression)
+                    .expressionAttributeNames(expressionAttributeNames).build();
         /* No one has the lock, go ahead and acquire it.
          * The person storing the lock into DynamoDB should err on the side of thinking the lock will expire
          * sooner than it actually will, so they start counting towards its expiration before the Put succeeds
@@ -721,9 +727,6 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private LockItem putLockItemAndStartSessionMonitor(AcquireLockOptions options, String key, Optional<String> sortKey, boolean deleteLockOnRelease,
         Optional<SessionMonitor> sessionMonitor, Optional<ByteBuffer> newLockData, String recordVersionNumber, PutItemRequest putItemRequest) {
         final long lastUpdatedTime = LockClientUtils.INSTANCE.millisecondTime();
-        if (options.getRequestMetricCollector().isPresent()) {
-            putItemRequest.setRequestMetricCollector(options.getRequestMetricCollector().get());
-        }
         this.dynamoDB.putItem(putItemRequest);
 
         final LockItem lockItem =
@@ -822,8 +825,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 //3. The lock already exists (UpdateItem API can cause a new item to be created if you do not condition the primary keys with attribute_exists)
                 final String conditionalExpression;
                 final Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
-                expressionAttributeValues.put(RVN_VALUE_EXPRESSION_VARIABLE, new AttributeValue(lockItem.getRecordVersionNumber()));
-                expressionAttributeValues.put(OWNER_NAME_VALUE_EXPRESSION_VARIABLE, new AttributeValue(lockItem.getOwnerName()));
+                expressionAttributeValues.put(RVN_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(lockItem.getRecordVersionNumber()).build());
+                expressionAttributeValues.put(OWNER_NAME_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(lockItem.getOwnerName()).build());
                 final Map<String, String> expressionAttributeNames = new HashMap<>();
                 expressionAttributeNames.put(PK_PATH_EXPRESSION_VARIABLE, partitionKeyName);
                 expressionAttributeNames.put(OWNER_NAME_PATH_EXPRESSION_VARIABLE, OWNER_NAME);
@@ -837,13 +840,15 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
                 final Map<String, AttributeValue> key = getItemKeys(lockItem);
                 if (deleteLock) {
-                    final DeleteItemRequest deleteItemRequest = new DeleteItemRequest(this.tableName, key);
-                    if (options.getRequestMetricCollector().isPresent()) {
-                        deleteItemRequest.setRequestMetricCollector(options.getRequestMetricCollector().get());
-                    }
+                    final DeleteItemRequest deleteItemRequest = DeleteItemRequest.builder()
+                            .tableName(tableName)
+                            .key(key)
+                            .conditionExpression(conditionalExpression)
+                            .expressionAttributeNames(expressionAttributeNames)
+                            .expressionAttributeValues(expressionAttributeValues)
+                            .build();
 
-                    this.dynamoDB.deleteItem(deleteItemRequest.withConditionExpression(conditionalExpression).withExpressionAttributeNames(expressionAttributeNames)
-                        .withExpressionAttributeValues(expressionAttributeValues));
+                    this.dynamoDB.deleteItem(deleteItemRequest);
                 } else {
                     final String updateExpression;
                     expressionAttributeNames.put(IS_RELEASED_PATH_EXPRESSION_VARIABLE, IS_RELEASED);
@@ -851,28 +856,28 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                     if (data.isPresent()) {
                         updateExpression = UPDATE_IS_RELEASED_AND_DATA;
                         expressionAttributeNames.put(DATA_PATH_EXPRESSION_VARIABLE, DATA);
-                        expressionAttributeValues.put(DATA_VALUE_EXPRESSION_VARIABLE, new AttributeValue().withB(data.get()));
+                        expressionAttributeValues.put(DATA_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().b(SdkBytes.fromByteBuffer(data.get())).build());
                     } else {
                         updateExpression = UPDATE_IS_RELEASED;
                     }
-                    final UpdateItemRequest updateItemRequest =
-                        new UpdateItemRequest().withTableName(this.tableName).withKey(key).withUpdateExpression(updateExpression).withConditionExpression(conditionalExpression)
-                            .withExpressionAttributeNames(expressionAttributeNames).withExpressionAttributeValues(expressionAttributeValues);
-
-                    if (options.getRequestMetricCollector().isPresent()) {
-                        updateItemRequest.setRequestMetricCollector(options.getRequestMetricCollector().get());
-                    }
+                    final UpdateItemRequest updateItemRequest = UpdateItemRequest.builder()
+                            .tableName(this.tableName)
+                            .key(key)
+                            .updateExpression(updateExpression)
+                            .conditionExpression(conditionalExpression)
+                            .expressionAttributeNames(expressionAttributeNames)
+                            .expressionAttributeValues(expressionAttributeValues).build();
 
                     this.dynamoDB.updateItem(updateItemRequest);
                 }
             } catch (final ConditionalCheckFailedException conditionalCheckFailedException) {
                 logger.debug("Someone else acquired the lock before you asked to release it", conditionalCheckFailedException);
                 return false;
-            } catch (final AmazonClientException amazonClientException) {
+            } catch (final SdkClientException sdkClientException) {
                 if (bestEffort) {
-                    logger.warn("Ignore AmazonClientException and continue to clean up", amazonClientException);
+                    logger.warn("Ignore SdkClientException and continue to clean up", sdkClientException);
                 } else {
-                    throw amazonClientException;
+                    throw sdkClientException;
                 }
             }
 
@@ -892,9 +897,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
     private Map<String, AttributeValue> getKeys(String partitionKey, Optional<String> sortKey) {
         final Map<String, AttributeValue> key = new HashMap<>();
-        key.put(this.partitionKeyName, new AttributeValue().withS(partitionKey));
+        key.put(this.partitionKeyName, AttributeValue.builder().s(partitionKey).build());
         if (sortKey.isPresent()) {
-            key.put(this.sortKeyName.get(), new AttributeValue().withS(sortKey.get()));
+            key.put(this.sortKeyName.get(), AttributeValue.builder().s(sortKey.get()).build());
         }
         return key;
     }
@@ -959,20 +964,21 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     public Optional<LockItem> getLockFromDynamoDB(final GetLockOptions options) {
         Objects.requireNonNull(options, "AcquireLockOptions cannot be null");
         Objects.requireNonNull(options.getPartitionKey(), "Cannot lookup null key");
-        final GetItemResult result = this.readFromDynamoDB(options.getPartitionKey(), options.getSortKey(), options.getRequestMetricCollector());
-        final Map<String, AttributeValue> item = result.getItem();
+        final GetItemResponse result = this.readFromDynamoDB(options.getPartitionKey(), options.getSortKey());
+        final Map<String, AttributeValue> item = result.item();
 
-        if (item == null) {
+        if (item == null || item.isEmpty()) {
             return Optional.empty();
         }
 
         return Optional.of(this.createLockItem(options, item));
     }
 
-    private LockItem createLockItem(final GetLockOptions options, final Map<String, AttributeValue> item) {
+    private LockItem createLockItem(final GetLockOptions options, final Map<String, AttributeValue> immutableItem) {
+        Map<String, AttributeValue> item = new HashMap<>(immutableItem);
         final Optional<ByteBuffer> data = Optional.ofNullable(item.get(DATA)).map(dataAttributionValue -> {
             item.remove(DATA);
-            return dataAttributionValue.getB();
+            return dataAttributionValue.b().asByteBuffer();
         });
 
         final AttributeValue ownerName = item.remove(OWNER_NAME);
@@ -994,9 +1000,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 options.getPartitionKey(),
                 options.getSortKey(), data,
                 options.isDeleteLockOnRelease(),
-                ownerName.getS(),
-                Long.parseLong(leaseDuration.getS()), lookupTime,
-                recordVersionNumber.getS(), isReleased, Optional.empty(), item);
+                ownerName.s(),
+                Long.parseLong(leaseDuration.s()), lookupTime,
+                recordVersionNumber.s(), isReleased, Optional.empty(), item);
         return lockItem;
     }
 
@@ -1015,12 +1021,12 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      * released, as noted by @{link LockItem#isReleased()}.
      */
     public Stream<LockItem> getAllLocksFromDynamoDB(final boolean deleteOnRelease) {
-        final ScanRequest scanRequest = new ScanRequest().withTableName(this.tableName);
+        final ScanRequest scanRequest = ScanRequest.builder().tableName(this.tableName).build();
         final LockItemPaginatedScanIterator iterator = new LockItemPaginatedScanIterator(this.dynamoDB, scanRequest, item -> {
-            final String key = item.get(this.partitionKeyName).getS();
+            final String key = item.get(this.partitionKeyName).s();
             GetLockOptionsBuilder options = GetLockOptions.builder(key).withDeleteLockOnRelease(deleteOnRelease);
 
-            options = this.sortKeyName.map(item::get).map(AttributeValue::getS).map(options::withSortKey).orElse(options);
+            options = this.sortKeyName.map(item::get).map(AttributeValue::s).map(options::withSortKey).orElse(options);
 
             final LockItem lockItem = this.createLockItem(options.build(), item);
             return lockItem;
@@ -1092,8 +1098,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             //3. The lock already exists (UpdateItem API can cause a new item to be created if you do not condition the primary keys with attribute_exists)
             final String conditionalExpression;
             final Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
-            expressionAttributeValues.put(RVN_VALUE_EXPRESSION_VARIABLE, new AttributeValue(lockItem.getRecordVersionNumber()));
-            expressionAttributeValues.put(OWNER_NAME_VALUE_EXPRESSION_VARIABLE, new AttributeValue(lockItem.getOwnerName()));
+            expressionAttributeValues.put(RVN_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(lockItem.getRecordVersionNumber()).build());
+            expressionAttributeValues.put(OWNER_NAME_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(lockItem.getOwnerName()).build());
             final Map<String, String> expressionAttributeNames = new HashMap<>();
             expressionAttributeNames.put(PK_PATH_EXPRESSION_VARIABLE, partitionKeyName);
             expressionAttributeNames.put(LEASE_DURATION_PATH_VALUE_EXPRESSION_VARIABLE, LEASE_DURATION);
@@ -1110,26 +1116,26 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
             //Set up update expression for UpdateItem.
             final String updateExpression;
-            expressionAttributeValues.put(NEW_RVN_VALUE_EXPRESSION_VARIABLE, new AttributeValue(recordVersionNumber));
-            expressionAttributeValues.put(LEASE_DURATION_VALUE_EXPRESSION_VARIABLE, new AttributeValue(String.valueOf(leaseDurationToEnsureInMilliseconds)));
+            expressionAttributeValues.put(NEW_RVN_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(recordVersionNumber).build());
+            expressionAttributeValues.put(LEASE_DURATION_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(String.valueOf(leaseDurationToEnsureInMilliseconds)).build());
             if (deleteData) {
                 expressionAttributeNames.put(DATA_PATH_EXPRESSION_VARIABLE, DATA);
                 updateExpression = UPDATE_LEASE_DURATION_AND_RVN_AND_REMOVE_DATA;
             } else if (options.getData().isPresent()) {
                 expressionAttributeNames.put(DATA_PATH_EXPRESSION_VARIABLE, DATA);
-                expressionAttributeValues.put(DATA_VALUE_EXPRESSION_VARIABLE, new AttributeValue().withB(options.getData().get()));
+                expressionAttributeValues.put(DATA_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().b(SdkBytes.fromByteBuffer(options.getData().get())).build());
                 updateExpression = UPDATE_LEASE_DURATION_AND_RVN_AND_DATA;
             } else {
                 updateExpression = UPDATE_LEASE_DURATION_AND_RVN;
             }
 
-            final UpdateItemRequest updateItemRequest =
-                new UpdateItemRequest().withTableName(tableName).withKey(getItemKeys(lockItem)).withConditionExpression(conditionalExpression).withUpdateExpression(updateExpression)
-                    .withExpressionAttributeNames(expressionAttributeNames).withExpressionAttributeValues(expressionAttributeValues);
-
-            if (options.getRequestMetricCollector().isPresent()) {
-                updateItemRequest.setRequestMetricCollector(options.getRequestMetricCollector().get());
-            }
+            final UpdateItemRequest updateItemRequest = UpdateItemRequest.builder()
+                    .tableName(tableName)
+                    .key(getItemKeys(lockItem))
+                    .conditionExpression(conditionalExpression)
+                    .updateExpression(updateExpression)
+                    .expressionAttributeNames(expressionAttributeNames)
+                    .expressionAttributeValues(expressionAttributeValues).build();
 
             try {
                 final long lastUpdateOfLock = LockClientUtils.INSTANCE.millisecondTime();
@@ -1139,15 +1145,16 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 logger.debug("Someone else acquired the lock, so we will stop heartbeating it", conditionalCheckFailedException);
                 this.locks.remove(lockItem.getUniqueIdentifier());
                 throw new LockNotGrantedException("Someone else acquired the lock, so we will stop heartbeating it", conditionalCheckFailedException);
-            } catch (AmazonServiceException amazonServiceException) {
-                if (holdLockOnServiceUnavailable && amazonServiceException.getStatusCode() == HttpStatus.SC_SERVICE_UNAVAILABLE) {
+            } catch (AwsServiceException awsServiceException) {
+                if (holdLockOnServiceUnavailable
+                        && awsServiceException.awsErrorDetails().sdkHttpResponse().statusCode() == HttpStatusCode.SERVICE_UNAVAILABLE) {
                     // When DynamoDB service is unavailable, other threads may get the same exception and no thread may have the lock.
                     // For systems which should always hold a lock on an item and it is okay for multiple threads to hold the lock,
                     // the lookUpTime of local state can be updated to make it believe that it still has the lock.
                     logger.info("DynamoDB Service Unavailable. Holding the lock.");
                     lockItem.updateLookUpTime(LockClientUtils.INSTANCE.millisecondTime());
                 } else {
-                    throw amazonServiceException;
+                    throw awsServiceException;
                 }
             }
         }
@@ -1211,18 +1218,15 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     }
 
     /* Helper method to read a key from DynamoDB */
-    private GetItemResult readFromDynamoDB(final String key, final Optional<String> sortKey, final Optional<RequestMetricCollector> requestMetricCollector) {
+    private GetItemResponse readFromDynamoDB(final String key, final Optional<String> sortKey) {
         final Map<String, AttributeValue> dynamoDBKey = new HashMap<>();
-        dynamoDBKey.put(this.partitionKeyName, new AttributeValue().withS(key));
+        dynamoDBKey.put(this.partitionKeyName, AttributeValue.builder().s(key).build());
         if (this.sortKeyName.isPresent()) {
-            dynamoDBKey.put(this.sortKeyName.get(), new AttributeValue().withS(sortKey.get()));
+            dynamoDBKey.put(this.sortKeyName.get(), AttributeValue.builder().s(sortKey.get()).build());
         }
-        final GetItemRequest getItemRequest = new GetItemRequest(this.tableName, dynamoDBKey);
-        getItemRequest.setConsistentRead(true);
-
-        if (requestMetricCollector.isPresent()) {
-            getItemRequest.setRequestMetricCollector(requestMetricCollector.get());
-        }
+        final GetItemRequest getItemRequest = GetItemRequest.builder().tableName(tableName).key(dynamoDBKey)
+                .consistentRead(true)
+                .build();
 
         return this.dynamoDB.getItem(getItemRequest);
     }

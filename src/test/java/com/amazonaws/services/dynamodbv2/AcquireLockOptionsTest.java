@@ -14,21 +14,21 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+
 import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.runners.MockitoJUnitRunner;
-
-import com.amazonaws.metrics.RequestMetricCollector;
-import com.amazonaws.services.dynamodbv2.document.Item;
-import com.amazonaws.services.dynamodbv2.document.internal.InternalUtils;
+import org.mockito.junit.MockitoJUnitRunner;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 
 /**
@@ -39,12 +39,10 @@ import static org.junit.Assert.assertNotEquals;
 @RunWith(MockitoJUnitRunner.class)
 public class AcquireLockOptionsTest {
 
-    RequestMetricCollector metricCollector = RequestMetricCollector.NONE;
-
     @Test
     public void test_initializeOptionsWithRequestMetrics() {
-        final AcquireLockOptions options = AcquireLockOptions.builder("hashKey").withRequestMetricCollector(this.metricCollector).build();
-        assertEquals(this.metricCollector, options.getRequestMetricCollector().get());
+        final AcquireLockOptions options = AcquireLockOptions.builder("hashKey").build();
+        assertNotNull(options);
     }
 
     @Test
@@ -82,8 +80,8 @@ public class AcquireLockOptionsTest {
             .withUpdateExistingLockRecord(false)
             .withAcquireReleasedLocksConsistently(false)
             //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector).build();
-        assertNotEquals(left, right);
+            .build();
+        assertFalse(left.equals(right));
     }
 
     @Test
@@ -102,8 +100,8 @@ public class AcquireLockOptionsTest {
             .withUpdateExistingLockRecord(false)
             .withAcquireReleasedLocksConsistently(false)
             //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector).build();
-        assertNotEquals(left, right);
+            .build();
+        assertFalse(left.equals(right));
     }
 
     @Test
@@ -123,8 +121,8 @@ public class AcquireLockOptionsTest {
             .withAcquireReleasedLocksConsistently(false)
             .withShouldSkipBlockingWait(true)
             //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector).build();
-        assertNotEquals(left, right);
+            .build();
+        assertFalse(left.equals(right));
     }
 
     @Test
@@ -144,8 +142,8 @@ public class AcquireLockOptionsTest {
                 .withUpdateExistingLockRecord(false)
                 .withAcquireReleasedLocksConsistently(false)
                 //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-                .withRequestMetricCollector(metricCollector).build();
-        assertNotEquals(left, right);
+                .build();
+        assertFalse(left.equals(right));
     }
 
     @Test
@@ -162,9 +160,8 @@ public class AcquireLockOptionsTest {
             .withTimeUnit(TimeUnit.MILLISECONDS)
             .withAdditionalAttributes(new HashMap<>())
             .withUpdateExistingLockRecord(false)
-            .withAcquireReleasedLocksConsistently(false)
+            .withAcquireReleasedLocksConsistently(false).build();
             //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector).build();
         assertNotEquals(left, right);
     }
 
@@ -182,9 +179,8 @@ public class AcquireLockOptionsTest {
                 .withTimeUnit(TimeUnit.MILLISECONDS)
                 .withAdditionalAttributes(new HashMap<>())
                 .withUpdateExistingLockRecord(false)
-                .withAcquireReleasedLocksConsistently(false)
+                .withAcquireReleasedLocksConsistently(false).build();
                 //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-                .withRequestMetricCollector(metricCollector).build();
         assertNotEquals(left, right);
     }
 
@@ -204,8 +200,8 @@ public class AcquireLockOptionsTest {
             .withUpdateExistingLockRecord(false)
             .withAcquireReleasedLocksConsistently(false)
             //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector).build();
-        assertNotEquals(left, right);
+            .build();
+        assertFalse(left.equals(right));
     }
 
     @Test
@@ -224,8 +220,8 @@ public class AcquireLockOptionsTest {
             .withUpdateExistingLockRecord(false)
             .withAcquireReleasedLocksConsistently(false)
             //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector).build();
-        assertNotEquals(left, right);
+            .build();
+        assertFalse(left.equals(right));
     }
 
     @Test
@@ -244,13 +240,15 @@ public class AcquireLockOptionsTest {
             .withUpdateExistingLockRecord(false)
             .withAcquireReleasedLocksConsistently(false)
             //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector).build();
-        assertNotEquals(left, right);
+            .build();
+        assertFalse(left.equals(right));
     }
 
     @Test
     public void equals_additionalAttributesDifferent_returnsFalse() {
         AcquireLockOptions left = createLockOptions();
+        Map<String, AttributeValue> additionalAttributes = new HashMap<>();
+        additionalAttributes.put("asdf", AttributeValue.builder().nul(Boolean.TRUE).build());
         AcquireLockOptions right = AcquireLockOptions.builder("partitionKey")
             .withSortKey("sortKey")
             .withData(ByteBuffer.wrap("data".getBytes()))
@@ -260,11 +258,10 @@ public class AcquireLockOptionsTest {
             .withRefreshPeriod(1l)
             .withAdditionalTimeToWaitForLock(1l)
             .withTimeUnit(TimeUnit.MILLISECONDS)
-            .withAdditionalAttributes(InternalUtils.toAttributeValues(new Item().withNull("asdf")))
+            .withAdditionalAttributes(additionalAttributes)
             .withUpdateExistingLockRecord(false)
-            .withAcquireReleasedLocksConsistently(false)
+            .withAcquireReleasedLocksConsistently(false).build();
             //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector).build();
         assertNotEquals(left, right);
     }
 
@@ -282,9 +279,8 @@ public class AcquireLockOptionsTest {
                 .withTimeUnit(TimeUnit.MILLISECONDS)
                 .withAdditionalAttributes(new HashMap<>())
                 .withUpdateExistingLockRecord(true)
-                .withAcquireReleasedLocksConsistently(false)
+                .withAcquireReleasedLocksConsistently(false).build();
                 //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-                .withRequestMetricCollector(metricCollector).build();
         assertNotEquals(left, right);
     }
 
@@ -303,9 +299,8 @@ public class AcquireLockOptionsTest {
                 .withAdditionalAttributes(new HashMap<>())
                 .withUpdateExistingLockRecord(false)
                 .withShouldSkipBlockingWait(false)
-                .withAcquireReleasedLocksConsistently(false)
+                .withAcquireReleasedLocksConsistently(false).build();
                 //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-                .withRequestMetricCollector(metricCollector).build();
         assertNotEquals(left, right);
     }
 
@@ -323,9 +318,8 @@ public class AcquireLockOptionsTest {
                 .withTimeUnit(TimeUnit.MILLISECONDS)
                 .withAdditionalAttributes(new HashMap<>())
                 .withUpdateExistingLockRecord(false)
-                .withAcquireReleasedLocksConsistently(true)
+                .withAcquireReleasedLocksConsistently(true).build();
                 //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-                .withRequestMetricCollector(metricCollector).build();
         assertNotEquals(left, right);
     }
 
@@ -344,28 +338,7 @@ public class AcquireLockOptionsTest {
             .withAdditionalAttributes(new HashMap<>())
             .withUpdateExistingLockRecord(false)
             .withAcquireReleasedLocksConsistently(false)
-            .withSessionMonitor(1L, Optional.empty()) //never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector).build();
-        assertNotEquals(left, right);
-    }
-
-    @Test
-    public void equals_metricCollectorDifferent_returnsFalse() {
-        AcquireLockOptions left = createLockOptions();
-        AcquireLockOptions right = AcquireLockOptions.builder("partitionKey")
-            .withSortKey("sortKey")
-            .withData(ByteBuffer.wrap("data".getBytes()))
-            .withReplaceData(true)
-            .withDeleteLockOnRelease(true)
-            .withAcquireOnlyIfLockAlreadyExists(false)
-            .withRefreshPeriod(1l)
-            .withAdditionalTimeToWaitForLock(1l)
-            .withTimeUnit(TimeUnit.MILLISECONDS)
-            .withAdditionalAttributes(new HashMap<>())
-            .withUpdateExistingLockRecord(false)
-            .withAcquireReleasedLocksConsistently(false)
-            //.withSessionMonitor(1L, Optional.empty()) //never equal if session monitor is set
-            .withRequestMetricCollector(null).build();
+            .withSessionMonitor(1L, Optional.empty()).build(); //never equal if session monitor is set
         assertNotEquals(left, right);
     }
 
@@ -398,9 +371,8 @@ public class AcquireLockOptionsTest {
             .withAdditionalAttributes(new HashMap<>())
             .withUpdateExistingLockRecord(false)
             .withShouldSkipBlockingWait(true)
-            .withAcquireReleasedLocksConsistently(false)
+            .withAcquireReleasedLocksConsistently(false);
             //.withSessionMonitor(1L, Optional.empty()) never equal if session monitor is set
-            .withRequestMetricCollector(metricCollector);
 
     }
 }
