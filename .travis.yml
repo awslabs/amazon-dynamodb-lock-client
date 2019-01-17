@@ -1,0 +1,15 @@
+language: java
+dist: xenial
+jdk:
+  - openjdk8
+cache:
+  directories:
+    - "${HOME}/.m2"
+branches:
+  only:
+    - master
+script:
+  - mvn install verify -Pintegration-tests
+notifications:
+  email:
+    - amcp@amazon.com
