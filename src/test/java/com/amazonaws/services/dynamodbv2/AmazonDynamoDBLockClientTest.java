@@ -15,6 +15,7 @@
 package com.amazonaws.services.dynamodbv2;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.any;
@@ -34,8 +35,6 @@ import java.util.UUID;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
-
-import javax.swing.text.html.Option;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -139,6 +138,134 @@ public class AmazonDynamoDBLockClientTest {
         verify(createTableOptions, times(2)).getRequestMetricCollector();
     }
 
+    @Test
+    public void acquireLock_whenLockDoesNotExist() throws InterruptedException {
+        setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+        when(dynamodb.getItem(any())).thenReturn(new GetItemResult());
+        LockItem item = client.acquireLock(AcquireLockOptions.builder("asdf").build());
+        assertNotNull(item);
+        assertFalse(item.getSequenceId().isPresent());
+    }
+
+    @Test
+    public void acquireLock_whenLockDoesNotExist_andWithSequenceIdTracking() throws InterruptedException {
+        setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClientWithSequenceIdTracking();
+        when(dynamodb.getItem(any())).thenReturn(new GetItemResult());
+        LockItem item = client.acquireLock(AcquireLockOptions.builder("asdf").build());
+        assertNotNull(item);
+        assertEquals(1L, (long) item.getSequenceId().get());
+    }
+
+    @Test
+    public void acquireLock_whenLockIsReleased() throws InterruptedException {
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+
+        when(dynamodb.getItem(any()))
+                .thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
+                        .withString("customer", "customer1")
+                        .withString("ownerName", "foobar")
+                        .withString("recordVersionNumber", uuid.toString())
+                        .withNumber("sequenceId", 123L)
+                        .withString("leaseDuration", "1")
+                        .withBoolean("isReleased", true)
+                )));
+
+        LockItem item = client.acquireLock(AcquireLockOptions.builder("customer1")
+                .withAdditionalTimeToWaitForLock(1000L)
+                .withTimeUnit(TimeUnit.MILLISECONDS)
+                .build());
+
+        assertNotNull(item);
+        assertFalse(item.getSequenceId().isPresent());
+    }
+
+    @Test
+    public void acquireLock_whenLockIsReleased_andWithSequenceIdTracking() throws InterruptedException {
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClientWithSequenceIdTracking();
+
+        when(dynamodb.getItem(any()))
+                .thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
+                        .withString("customer", "customer1")
+                        .withString("ownerName", "foobar")
+                        .withString("recordVersionNumber", uuid.toString())
+                        .withNumber("sequenceId", 123L)
+                        .withString("leaseDuration", "1")
+                        .withBoolean("isReleased", true)
+                )));
+
+        LockItem item = client.acquireLock(AcquireLockOptions.builder("customer1")
+                .withAdditionalTimeToWaitForLock(1000L)
+                .withTimeUnit(TimeUnit.MILLISECONDS)
+                .build());
+
+        assertNotNull(item);
+        assertEquals(124L, (long) item.getSequenceId().get());
+    }
+
+    @Test
+    public void acquireLock_whenLockHasExpired() throws InterruptedException {
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+
+        when(dynamodb.getItem(any()))
+                .thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
+                        .withString("customer", "customer1")
+                        .withString("ownerName", "foobar")
+                        .withString("recordVersionNumber", uuid.toString())
+                        .withNumber("sequenceId", 123L)
+                        .withString("leaseDuration", "1")
+                )))
+                .thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
+                        .withString("customer", "customer1")
+                        .withString("ownerName", "foobar")
+                        .withString("recordVersionNumber", uuid.toString())
+                        .withNumber("sequenceId", 123L)
+                        .withString("leaseDuration", "1")
+                )));
+
+        LockItem item = client.acquireLock(AcquireLockOptions.builder("customer1")
+                .withAdditionalTimeToWaitForLock(1000L)
+                .withTimeUnit(TimeUnit.MILLISECONDS)
+                .build());
+
+        assertNotNull(item);
+        assertFalse(item.getSequenceId().isPresent());
+    }
+
+    @Test
+    public void acquireLock_whenLockHasExpired_andWithSequenceIdTracking() throws InterruptedException {
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClientWithSequenceIdTracking();
+
+        when(dynamodb.getItem(any()))
+                .thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
+                        .withString("customer", "customer1")
+                        .withString("ownerName", "foobar")
+                        .withString("recordVersionNumber", uuid.toString())
+                        .withNumber("sequenceId", 123L)
+                        .withString("leaseDuration", "1")
+                )))
+                .thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
+                        .withString("customer", "customer1")
+                        .withString("ownerName", "foobar")
+                        .withString("recordVersionNumber", uuid.toString())
+                        .withNumber("sequenceId", 123L)
+                        .withString("leaseDuration", "1")
+                )));
+
+        LockItem item = client.acquireLock(AcquireLockOptions.builder("customer1")
+                .withAdditionalTimeToWaitForLock(1000L)
+                .withTimeUnit(TimeUnit.MILLISECONDS)
+                .build());
+
+        assertNotNull(item);
+        assertEquals(124L, (long) item.getSequenceId().get());
+    }
+
     @Test(expected = LockNotGrantedException.class)
     public void acquireLock_whenLockAlreadyExists_throwLockNotGrantedException() throws InterruptedException {
         setOwnerNameToUuid();
@@ -191,7 +318,7 @@ public class AmazonDynamoDBLockClientTest {
         UUID uuid = setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
-            false, uuid.toString(), 1L, 2L, "rvn", false,
+            false, uuid.toString(), 1L, 2L, "rvn", Optional.empty(), false,
             Optional.empty(), null);
         client.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(true).withData(ByteBuffer.wrap("data".getBytes())).build());
     }
@@ -203,7 +330,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = 2l;
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
             false, uuid.toString(), 1L, lastUpdatedTimeInMilliseconds,
-            "rvn", false, Optional.empty(), null);
+            "rvn", Optional.empty(), false, Optional.empty(), null);
         client.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(null).withData(ByteBuffer.wrap("data".getBytes())).build());
     }
 
@@ -214,7 +341,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = Long.MAX_VALUE;
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
             false, "different owner", 1L, lastUpdatedTimeInMilliseconds,
-            "rvn", false, Optional.empty(), null);
+            "rvn", Optional.empty(), false, Optional.empty(), null);
         client.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(null).withData(ByteBuffer.wrap("data".getBytes())).build());
     }
 
@@ -225,7 +352,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = Long.MAX_VALUE;
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
             false, uuid.toString(), 1L, lastUpdatedTimeInMilliseconds,
-            "rvn", true, Optional.empty(), null);
+            "rvn", Optional.empty(), true, Optional.empty(), null);
         client.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(null).withData(ByteBuffer.wrap("data".getBytes())).build());
     }
 
@@ -236,7 +363,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = Long.MAX_VALUE;
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
             false, uuid.toString(), 1L, lastUpdatedTimeInMilliseconds,
-            "rvn", false, Optional.empty(), null);
+            "rvn", Optional.empty(), false, Optional.empty(), null);
         client.sendHeartbeat(SendHeartbeatOptions.builder(item)
             .withDeleteData(null)
             .withData(ByteBuffer.wrap("data".getBytes()))
@@ -245,16 +372,23 @@ public class AmazonDynamoDBLockClientTest {
     }
 
     private AmazonDynamoDBLockClient getLockClient() {
-        return spy(new AmazonDynamoDBLockClient(
+        return new AmazonDynamoDBLockClient(
             getLockClientBuilder(null)
-                .build()));
+                .build());
     }
 
     private AmazonDynamoDBLockClient getLockClientWithSortKey() {
-        return spy(new AmazonDynamoDBLockClient(
+        return new AmazonDynamoDBLockClient(
             getLockClientBuilder(null)
                 .withSortKeyName("sort")
-                .build()));
+                .build());
+    }
+
+    private AmazonDynamoDBLockClient getLockClientWithSequenceIdTracking() {
+        return new AmazonDynamoDBLockClient(
+                getLockClientBuilder(null)
+                        .withSequenceIdTracking(true)
+                        .build());
     }
 
     private AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder getLockClientBuilder(Function<String, ThreadFactory> threadFactoryFunction) {

@@ -45,6 +45,7 @@ public class LockItem implements Closeable {
 
     private final AtomicLong lookupTime;
     private final StringBuffer recordVersionNumber;
+    private final Optional<Long> sequenceId;
     private final AtomicLong leaseDuration;
     private final Map<String, AttributeValue> additionalAttributes;
 
@@ -68,6 +69,9 @@ public class LockItem implements Closeable {
      * @param lastUpdatedTimeInMilliseconds How recently the lock was updated (in milliseconds)
      * @param recordVersionNumber           The current record version number of the lock -- this is
      *                                      globally unique and changes each time the lock is updated
+     * @param sequenceId                    The monotonically-increasing sequence ID of the lock --
+     *                                      this is incremented every time the lock ownership changes
+     *                                      if sequence ID tracking is enabled
      * @param isReleased                    Whether the item in DynamoDB is marked as released, but still
      *                                      exists in the table
      * @param sessionMonitor                Optionally, the SessionMonitor object with which to associate
@@ -76,12 +80,14 @@ public class LockItem implements Closeable {
      *                                      the lock
      */
     LockItem(final AmazonDynamoDBLockClient client, final String partitionKey, final Optional<String> sortKey, final Optional<ByteBuffer> data, final boolean deleteLockItemOnClose,
-        final String ownerName, final long leaseDuration, final long lastUpdatedTimeInMilliseconds, final String recordVersionNumber, final boolean isReleased,
-        final Optional<SessionMonitor> sessionMonitor, final Map<String, AttributeValue> additionalAttributes) {
+        final String ownerName, final long leaseDuration, final long lastUpdatedTimeInMilliseconds, final String recordVersionNumber, final Optional<Long> sequenceId,
+        final boolean isReleased, final Optional<SessionMonitor> sessionMonitor, final Map<String, AttributeValue> additionalAttributes) {
+
         Objects.requireNonNull(partitionKey, "Cannot create a lock with a null key");
         Objects.requireNonNull(ownerName, "Cannot create a lock with a null owner");
         Objects.requireNonNull(sortKey, "Cannot create a lock with a null sortKey (use Optional.empty())");
         Objects.requireNonNull(data, "Cannot create a lock with a null data (use Optional.empty())");
+
         this.client = client;
         this.partitionKey = partitionKey;
         this.sortKey = sortKey;
@@ -92,6 +98,7 @@ public class LockItem implements Closeable {
         this.leaseDuration = new AtomicLong(leaseDuration);
         this.lookupTime = new AtomicLong(lastUpdatedTimeInMilliseconds);
         this.recordVersionNumber = new StringBuffer(recordVersionNumber);
+        this.sequenceId = sequenceId;
         this.isReleased = isReleased;
         this.sessionMonitor = sessionMonitor;
         this.additionalAttributes = additionalAttributes;
@@ -163,6 +170,18 @@ public class LockItem implements Closeable {
     }
 
     /**
+     * Returns the current sequence id of the lock in DynamoDB. This allows downstream systems to detect out-of-order writes
+     * by a previous writer who has not yet realized that they have lost the lock. Only populated when sequence ID tracking
+     * has been enabled.
+     *
+     * @return the sequence id associated with the lock, if set
+     * @see AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder#withSequenceIdTracking(boolean)
+     */
+    public Optional<Long> getSequenceId() {
+        return sequenceId;
+    }
+
+    /**
      * Returns the amount of time that the client has this lock for, which can be kept up to date by calling
      * {@code sendHeartbeat}.
      *
@@ -195,8 +214,8 @@ public class LockItem implements Closeable {
     @Override
     public String toString() {
         return String
-            .format("LockItem{Partition Key=%s, Sort Key=%s, Owner Name=%s, Lookup Time=%d, Lease Duration=%d, " + "Record Version Number=%s, Delete On Close=%s, Is Released=%s}",
-                this.partitionKey, this.sortKey, this.ownerName, this.lookupTime.get(), this.leaseDuration.get(), this.recordVersionNumber, this.deleteLockItemOnClose,
+            .format("LockItem{Partition Key=%s, Sort Key=%s, Owner Name=%s, Lookup Time=%d, Lease Duration=%d, " + "Record Version Number=%s, Sequence ID=%s, Delete On Close=%s, Is Released=%s}",
+                this.partitionKey, this.sortKey, this.ownerName, this.lookupTime.get(), this.leaseDuration.get(), this.recordVersionNumber, this.sequenceId, this.deleteLockItemOnClose,
                 this.isReleased);
     }
 

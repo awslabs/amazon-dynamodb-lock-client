@@ -185,6 +185,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private final long leaseDurationInMilliseconds;
     private final long heartbeatPeriodInMilliseconds;
     private final String ownerName;
+    private final boolean trackSequenceIds;
     private final ConcurrentHashMap<String, LockItem> locks;
     private final ConcurrentHashMap<String, Thread> sessionMonitors;
     private final Optional<Thread> backgroundThread;
@@ -196,6 +197,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     protected static final String OWNER_NAME = "ownerName";
     protected static final String LEASE_DURATION = "leaseDuration";
     protected static final String RECORD_VERSION_NUMBER = "recordVersionNumber";
+    protected static final String SEQUENCE_ID = "sequenceId";
     protected static final String IS_RELEASED = "isReleased";
     protected static final String IS_RELEASED_VALUE = "1";
     protected static final AttributeValue IS_RELEASED_ATTRIBUTE_VALUE = new AttributeValue(IS_RELEASED_VALUE);
@@ -227,6 +229,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         this.locks = new ConcurrentHashMap<>();
         this.sessionMonitors = new ConcurrentHashMap<>();
         this.ownerName = amazonDynamoDBLockClientOptions.getOwnerName();
+        this.trackSequenceIds = amazonDynamoDBLockClientOptions.getTrackSequenceIds();
         this.leaseDurationInMilliseconds = amazonDynamoDBLockClientOptions.getTimeUnit().toMillis(amazonDynamoDBLockClientOptions.getLeaseDuration());
         this.heartbeatPeriodInMilliseconds = amazonDynamoDBLockClientOptions.getTimeUnit().toMillis(amazonDynamoDBLockClientOptions.getHeartbeatPeriod());
         this.partitionKeyName = amazonDynamoDBLockClientOptions.getPartitionKeyName();
@@ -358,7 +361,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
         if (options.getAdditionalAttributes().containsKey(this.partitionKeyName) || options.getAdditionalAttributes().containsKey(OWNER_NAME) || options
             .getAdditionalAttributes().containsKey(LEASE_DURATION) || options.getAdditionalAttributes().containsKey(RECORD_VERSION_NUMBER) || options
-            .getAdditionalAttributes().containsKey(DATA) || this.sortKeyName.isPresent() && options.getAdditionalAttributes().containsKey(this.sortKeyName.get())) {
+            .getAdditionalAttributes().containsKey(DATA) || this.sortKeyName.isPresent() && options.getAdditionalAttributes().containsKey(this.sortKeyName.get())
+            || this.trackSequenceIds && options.getAdditionalAttributes().containsKey(SEQUENCE_ID)) {
             throw new IllegalArgumentException(String
                 .format("Additional attribute cannot be one of the following types: " + "%s, %s, %s, %s, %s", this.partitionKeyName, OWNER_NAME, LEASE_DURATION,
                     RECORD_VERSION_NUMBER, DATA));
@@ -376,7 +380,16 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             refreshPeriodInMilliseconds = options.getTimeUnit().toMillis(options.getRefreshPeriod());
         }
 
-        final boolean deleteLockOnRelease = options.getDeleteLockOnRelease();
+        final boolean deleteLockOnRelease;
+        if (this.trackSequenceIds) {
+            if (options.getDeleteLockOnRelease().isPresent() && options.getDeleteLockOnRelease().get()) {
+                throw new IllegalArgumentException("Cannot set deleteLockOnRelease when sequence id tracking is enabled");
+            }
+            deleteLockOnRelease = false;
+        } else {
+            deleteLockOnRelease = options.getDeleteLockOnRelease().orElse(true);
+        }
+
         final boolean replaceData = options.getReplaceData();
 
         final Optional<SessionMonitor> sessionMonitor = options.getSessionMonitor();
@@ -412,6 +425,17 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                         newLockData = options.getData(); // If there is no existing data, we write the input data to the lock.
                     }
 
+                    // If we're tracking sequence IDs, initialize or increment the current value.
+                    Optional<Long> sequenceId = Optional.empty();
+                    if (trackSequenceIds) {
+                        sequenceId = existingLock.flatMap(value -> value.getSequenceId());
+                        if (sequenceId.isPresent()) {
+                            sequenceId = sequenceId.map(value -> value + 1);
+                        } else {
+                            sequenceId = Optional.of(1L);
+                        }
+                    }
+
                     final Map<String, AttributeValue> item = new HashMap<>();
                     item.putAll(options.getAdditionalAttributes());
                     item.put(this.partitionKeyName, new AttributeValue().withS(key));
@@ -419,13 +443,14 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                     item.put(LEASE_DURATION, new AttributeValue().withS(String.valueOf(this.leaseDurationInMilliseconds)));
                     final String recordVersionNumber = this.generateRecordVersionNumber();
                     item.put(RECORD_VERSION_NUMBER, new AttributeValue().withS(String.valueOf(recordVersionNumber)));
+                    sequenceId.ifPresent(sid -> item.put(SEQUENCE_ID, new AttributeValue().withN(sid.toString())));
                     sortKeyName.ifPresent(sortKeyName -> item.put(sortKeyName, new AttributeValue().withS(sortKey.get())));
                     newLockData.ifPresent(byteBuffer -> item.put(DATA, new AttributeValue().withB(byteBuffer)));
 
                     //if the existing lock does not exist or exists and is released
                     if (!existingLock.isPresent() || existingLock.get().isReleased()) {
                         return upsertAndMonitorNewOrReleasedLock(options, key, sortKey, deleteLockOnRelease, sessionMonitor,
-                            newLockData, item, recordVersionNumber);
+                            newLockData, item, recordVersionNumber, sequenceId);
                     }
                     // we know that we didnt enter the if block above because it returns at the end.
                     // we also know that the existingLock.isPresent() is true
@@ -447,7 +472,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                             /* If the version numbers match, then we can acquire the lock, assuming it has already expired */
                             if (lockTryingToBeAcquired.isExpired()) {
                                 return upsertAndMonitorExpiredLock(options, key, sortKey, deleteLockOnRelease, sessionMonitor, existingLock, newLockData, item,
-                                    recordVersionNumber);
+                                    recordVersionNumber, sequenceId);
                             }
                         } else {
                             /*
@@ -484,7 +509,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     }
 
     private LockItem upsertAndMonitorExpiredLock(AcquireLockOptions options, String key, Optional<String> sortKey, boolean deleteLockOnRelease,
-        Optional<SessionMonitor> sessionMonitor, Optional<LockItem> existingLock, Optional<ByteBuffer> newLockData, Map<String, AttributeValue> item, String recordVersionNumber) {
+        Optional<SessionMonitor> sessionMonitor, Optional<LockItem> existingLock, Optional<ByteBuffer> newLockData, Map<String, AttributeValue> item, String recordVersionNumber,
+        Optional<Long> sequenceId) {
         final String conditionalExpression;
         final Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
         expressionAttributeValues.put(RVN_VALUE_EXPRESSION_VARIABLE, new AttributeValue(existingLock.get().getRecordVersionNumber()));
@@ -503,7 +529,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             .withExpressionAttributeNames(expressionAttributeNames).withExpressionAttributeValues(expressionAttributeValues);
 
         logger.trace("Acquiring an existing lock whose revisionVersionNumber did not change for " + partitionKeyName + " partitionKeyName=" + key + ", " + this.sortKeyName + "=" + sortKey);
-        return putLockItemAndStartSessionMonitor(options, key, sortKey, deleteLockOnRelease, sessionMonitor, newLockData, recordVersionNumber, putItemRequest);
+        return putLockItemAndStartSessionMonitor(options, key, sortKey, deleteLockOnRelease, sessionMonitor, newLockData, recordVersionNumber, sequenceId, putItemRequest);
     }
 
     /**
@@ -520,7 +546,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      */
     private LockItem upsertAndMonitorNewOrReleasedLock(AcquireLockOptions options, String key, Optional<String> sortKey,
         boolean deleteLockOnRelease, Optional<SessionMonitor> sessionMonitor,
-        Optional<ByteBuffer> newLockData, Map<String, AttributeValue> item, String recordVersionNumber) {
+        Optional<ByteBuffer> newLockData, Map<String, AttributeValue> item, String recordVersionNumber, Optional<Long> sequenceId) {
         final Map<String, String> expressionAttributeNames = new HashMap<>();
         expressionAttributeNames.put(PK_PATH_EXPRESSION_VARIABLE, this.partitionKeyName);
         expressionAttributeNames.put(IS_RELEASED_PATH_EXPRESSION_VARIABLE, IS_RELEASED);
@@ -534,11 +560,12 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
          * sooner than it actually will, so they start counting towards its expiration before the Put succeeds
          */
         logger.trace("Acquiring a new lock or an existing yet released lock on " + partitionKeyName + "=" + key + ", " + this.sortKeyName + "=" + sortKey);
-        return putLockItemAndStartSessionMonitor(options, key, sortKey, deleteLockOnRelease, sessionMonitor, newLockData, recordVersionNumber, putItemRequest);
+        return putLockItemAndStartSessionMonitor(options, key, sortKey, deleteLockOnRelease, sessionMonitor, newLockData, recordVersionNumber, sequenceId, putItemRequest);
     }
 
     private LockItem putLockItemAndStartSessionMonitor(AcquireLockOptions options, String key, Optional<String> sortKey, boolean deleteLockOnRelease,
-        Optional<SessionMonitor> sessionMonitor, Optional<ByteBuffer> newLockData, String recordVersionNumber, PutItemRequest putItemRequest) {
+        Optional<SessionMonitor> sessionMonitor, Optional<ByteBuffer> newLockData, String recordVersionNumber, Optional<Long> sequenceId,
+        PutItemRequest putItemRequest) {
         final long lastUpdatedTime = LockClientUtils.INSTANCE.millisecondTime();
         if (options.getRequestMetricCollector().isPresent()) {
             putItemRequest.setRequestMetricCollector(options.getRequestMetricCollector().get());
@@ -547,7 +574,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
         final LockItem lockItem =
             new LockItem(this, key, sortKey, newLockData, deleteLockOnRelease, this.ownerName, this.leaseDurationInMilliseconds, lastUpdatedTime,
-                recordVersionNumber, false, sessionMonitor, options.getAdditionalAttributes());
+                recordVersionNumber, sequenceId, false, sessionMonitor, options.getAdditionalAttributes());
         this.locks.put(lockItem.getUniqueIdentifier(), lockItem);
         this.tryAddSessionMonitor(lockItem.getUniqueIdentifier(), lockItem);
         return lockItem;
@@ -760,6 +787,10 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         final AttributeValue leaseDuration = item.remove(LEASE_DURATION);
         final AttributeValue recordVersionNumber = item.remove(RECORD_VERSION_NUMBER);
 
+        final Optional<Long> sequenceId = trackSequenceIds
+                ? Optional.ofNullable(item.remove(SEQUENCE_ID)).map(value -> Long.valueOf(value.getN()))
+                : Optional.empty();
+
         final boolean isReleased = item.containsKey(IS_RELEASED);
         item.remove(IS_RELEASED);
         item.remove(this.partitionKeyName);
@@ -777,7 +808,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 options.isDeleteLockOnRelease(),
                 ownerName.getS(),
                 Long.parseLong(leaseDuration.getS()), lookupTime,
-                recordVersionNumber.getS(), isReleased, Optional.empty(), item);
+                recordVersionNumber.getS(),
+                sequenceId,
+                isReleased, Optional.empty(), item);
         return lockItem;
     }
 

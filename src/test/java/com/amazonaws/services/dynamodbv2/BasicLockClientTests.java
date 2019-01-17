@@ -207,6 +207,23 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
+    public void testAcquireLockWithSequenceIdTracking() throws Exception {
+        LockItem item = this.lockClientWithSequenceIdTracking.acquireLock(AcquireLockOptions.builder("testKeySid").build());
+        assertEquals(1L, (long) item.getSequenceId().get());
+        item.close();
+
+        item = this.lockClientWithSequenceIdTracking.acquireLock(AcquireLockOptions.builder("testKeySid").build());
+        assertEquals(2L, (long) item.getSequenceId().get());
+
+        item.sendHeartBeat();
+        item.sendHeartBeat();
+        item.sendHeartBeat();
+
+        item = this.lockClientWithSequenceIdTracking.acquireLock(AcquireLockOptions.builder("testKeySid").build());
+        assertEquals(3L, (long) item.getSequenceId().get());
+    }
+
+    @Test
     public void testSendHeatbeatWithRangeKey() throws IOException, LockNotGrantedException, InterruptedException {
 
         final String data = new String("testSendHeartbeatLeaveData" + SECURE_RANDOM.nextDouble());
@@ -610,7 +627,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     public void testLockItemToString() throws LockNotGrantedException, InterruptedException {
         final LockItem lockItem = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
         final Pattern p = Pattern.compile("LockItem\\{Partition Key=testKey1, Sort Key=Optional.empty, Owner Name=" + INTEGRATION_TESTER + ", Lookup Time=\\d+, Lease Duration=3000, "
-            + "Record Version Number=\\w+-\\w+-\\w+-\\w+-\\w+, Delete On Close=true, Is Released=false\\}");
+            + "Record Version Number=\\w+-\\w+-\\w+-\\w+-\\w+, Sequence ID=Optional.empty, Delete On Close=true, Is Released=false\\}");
         assertTrue(p.matcher(lockItem.toString()).matches());
     }
 

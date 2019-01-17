@@ -67,6 +67,7 @@ public class LockItemTest {
             1L, //lease duration
             1000, //last updated time in milliseconds
             "recordVersionNumber",
+            Optional.empty(),
             false, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
             new HashMap<>())));
@@ -82,6 +83,7 @@ public class LockItemTest {
             1L, //lease duration
             1000, //last updated time in milliseconds
             "recordVersionNumber",
+            Optional.empty(),
             false, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
             new HashMap<>())));
@@ -102,6 +104,7 @@ public class LockItemTest {
             1L, //lease duration
             1000, //last updated time in milliseconds
             "recordVersionNumber",
+            Optional.empty(),
             true, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
             new HashMap<>()).isExpired());
@@ -122,6 +125,7 @@ public class LockItemTest {
             1L, //lease duration
             1000, //last updated time in milliseconds
             "recordVersionNumber",
+            Optional.empty(),
             true, //released
             Optional.empty(), //session monitor
             new HashMap<>()).ensure(2L, TimeUnit.MILLISECONDS);
@@ -137,6 +141,7 @@ public class LockItemTest {
             1L, //lease duration
             1000, //last updated time in milliseconds
             "recordVersionNumber",
+            Optional.empty(),
             true, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
             new HashMap<>()).millisecondsUntilDangerZoneEntered();
@@ -164,6 +169,7 @@ public class LockItemTest {
             1L, //lease duration
             1000, //last updated time in milliseconds
             "recordVersionNumber",
+            Optional.empty(),
             false, //released
             Optional.empty(), //session monitor
             new HashMap<>()).hasCallback();
@@ -178,6 +184,7 @@ public class LockItemTest {
             1L, //lease duration
             1000, //last updated time in milliseconds
             "recordVersionNumber",
+            Optional.empty(),
             false, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
             new HashMap<>()); //additional attributes
