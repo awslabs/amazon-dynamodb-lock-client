@@ -1,5 +1,5 @@
 /**
- * Copyright 2013-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2013-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * <p>
  * Licensed under the Amazon Software License (the "License").
  * You may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.when;
@@ -35,7 +36,7 @@ import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
 /**
  * LockItem unit tests.
  *
- * @author <a href="mailto:amcp@amazon.co.jp">Alexander Patrikalakis</a> 2017-07-13
+ * @author <a href="mailto:amcp@amazon.com">Alexander Patrikalakis</a> 2017-07-13
  */
 @RunWith(MockitoJUnitRunner.class)
 public class LockItemTest {
@@ -167,6 +168,17 @@ public class LockItemTest {
             false, //released
             Optional.empty(), //session monitor
             new HashMap<>()).hasCallback();
+    }
+
+    @Test
+    public void updateLookUpTime_whenLookUpTimeIsUpdated_thenGetLookUpTimeReturnsTheUpdatedTime() {
+        LockItem lockItem = createLockItem(lockClient);
+        assertEquals(1000, lockItem.getLookupTime());
+
+        //update the look up time
+        lockItem.updateLookUpTime(2000);
+
+        assertEquals(2000, lockItem.getLookupTime());
     }
 
     static LockItem createLockItem(AmazonDynamoDBLockClient lockClient) {

@@ -106,6 +106,45 @@ trying to acquire a lock:
 ```groovy
 LockItem lock = lockClient.acquireLock("Moe", "Test Data", 1, 5, TimeUnit.SECONDS);
 ```
+### Acquire lock without blocking the user thread.
+Example Use Case:
+ Suppose you have many messages that need to be processed for multiple lockable entities by a limited set of
+ processor-consumers. Further suppose that the processing time for each message is significant (for example, 15 minutes).
+ You also need to prevent multiple processing for the same resource.
+
+```
+  @Test
+    public void acquireLockNonBlocking() throws LockAlreadyOwnedException {
+        AcquireLockOptions lockOptions = AcquireLockOptions.builder("partitionKey")
+                                        .withShouldSkipBlockingWait(false).build();
+        LockItem lock = lockClient.acquireLock(lockOptions);
+    }
+```
+The above implementation of the locking client, would try to acquire lock, waiting for at least the lease duration (15
+minutes in our case). If the lock is already being held by other worker. This essentially blocks the threads from being
+used to process other messages in the queue.
+
+So we introduced an optional behavior which offers a Non-Blocking acquire lock implementation. While trying to acquire
+lock, The client can now optionally set ```shouldSkipBlockingWait = true ``` to prevent the user thread from being
+blocked until the lease duration, if the lock has already been held by another worker and has not been released yet.
+The caller can chose to immediately retry the lock acquisition or to back off and retry the lock acquisition, if lock is
+currently unavailable.
+
+```
+    @Test
+    public void acquireLockNonBlocking() throws LockAlreadyOwnedException {
+        AcquireLockOptions lockOptions = AcquireLockOptions.builder("partitionKey")
+                                        .withShouldSkipBlockingWait(true).build();
+        LockItem lock = lockClient.acquireLock(lockOptions);
+    }
+```
+If the lock does not exist or if the lock has been acquired by the other machine and is stale (has passed the lease
+duration), this would successfully acquire the lock.
+
+If the lock has already been held by another worker and has not been released yet and the lease duration has not expired
+since the lock was last updated by the current owner, this will throw a LockCurrentlyUnavailableException exception.
+The caller can chose to immediately retry the lock acquisition or to delay the processing for that lock item by NACKing
+the message.
 
 ### Read the data in a lock without acquiring it
 You can read the data in the lock without acquiring it, and find out who owns the lock. Here's how:

@@ -14,20 +14,12 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotSame;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
@@ -49,6 +41,18 @@ import com.amazonaws.services.dynamodbv2.model.PutItemResult;
 import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
 import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 /**
  * Integration tests for the AmazonDynamoDBLockClient. These unit tests use a local version of DynamoDB.
  *
@@ -64,6 +68,12 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     public void testAcquireBasicLock() throws LockNotGrantedException, InterruptedException {
         this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).build());
         assertTrue(this.lockClient.getLock("testKey1", Optional.empty()).get().getOwnerName().equals(INTEGRATION_TESTER));
+    }
+
+    @Test
+    public void testAcquireBasicLockWithSortKey() throws LockNotGrantedException, InterruptedException {
+        this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).build());
+        assertTrue(this.lockClient.getLock("testKey1", Optional.of("1")).get().getOwnerName().equals(INTEGRATION_TESTER));
     }
 
     /**
@@ -99,37 +109,69 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     /**
-     * Without a background thread, the lock does expire
-     *
-     * @throws InterruptedException if acquireLock was interrupted
-     */
-    @Test
-    public void testLockExpiration() throws InterruptedException {
-        final LockItem item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
-        assertEquals(item.getPartitionKey(), "testKey1");
-    }
-
-    /**
      * With a background thread, the lock does not expire
      *
      * @throws InterruptedException if acquireLock was interrupted
      * @throws IOException          in case we were unable to close the second lock client
      */
     @Test
-    public void testBackgroundThread() throws InterruptedException, IOException {
-        final AmazonDynamoDBLockClient lockClient2 = new AmazonDynamoDBLockClient(
-            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER).withLeaseDuration(3L).withHeartbeatPeriod(1L)
-                .withTimeUnit(TimeUnit.SECONDS).build());
-
-        final LockItem item = lockClient2.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
+    public void testBackgroundThread() throws InterruptedException {
+        final LockItem item = lockClientWithHeartbeating.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
         assertEquals(item.getPartitionKey(), "testKey1");
-
-        assertEquals(Optional.empty(), lockClient2.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1));
-        assertNotEquals(Optional.empty(), lockClient2.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_2));
+        assertEquals(Optional.empty(), lockClientWithHeartbeating.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1));
+        final Optional<LockItem> item2 = lockClientWithHeartbeating.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_2);
+        assertNotEquals(Optional.empty(), item2);
         Thread.sleep(5000);
-        assertEquals(Optional.empty(), lockClient2.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1));
-        assertEquals(Optional.empty(), lockClient2.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_2));
-        lockClient2.close();
+        assertEquals(Optional.empty(), lockClientWithHeartbeating.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1));
+        assertEquals(Optional.empty(), lockClientWithHeartbeating.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_2));
+        item.close();
+        item2.get().close();
+    }
+
+    @Test
+    public void testBackgroundThreadWithSortKey() throws InterruptedException {
+        final LockItem item = lockClientWithHeartbeatingForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_1);
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+        assertEquals(Optional.empty(), lockClientWithHeartbeatingForRangeKeyTable.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_1));
+        final Optional<LockItem> item2 = lockClientWithHeartbeatingForRangeKeyTable.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_2);
+        assertNotEquals(Optional.empty(), item2);
+        assertEquals(item2.get().getPartitionKey(), "testKey1");
+        assertEquals(item2.get().getSortKey(), Optional.of("2"));
+        Thread.sleep(5000);
+        assertEquals(Optional.empty(), lockClientWithHeartbeatingForRangeKeyTable.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_1));
+        assertEquals(Optional.empty(), lockClientWithHeartbeatingForRangeKeyTable.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_2));
+        item.close();
+        item2.get().close();
+    }
+
+    /**
+     * Without a background thread, the lock does expire
+     *
+     * @throws InterruptedException if acquireLock was interrupted
+     */
+    @Test
+    public void testNoBackgroundThread() throws InterruptedException, IOException {
+        final LockItem item = shortLeaseLockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
+        final LockItem item2 = shortLeaseLockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_2);
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item2.getPartitionKey(), "testKey2");
+        Thread.sleep(5000);
+        assertNotEquals(Optional.empty(), shortLeaseLockClient.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1));
+        assertNotEquals(Optional.empty(), shortLeaseLockClient.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_2));
+    }
+
+    @Test
+    public void testNoBackgroundThreadWithSortKey() throws InterruptedException, IOException {
+        final LockItem item = shortLeaseLockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_1);
+        final LockItem item2 = shortLeaseLockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_2);
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+        assertEquals(item2.getPartitionKey(), "testKey1");
+        assertEquals(item2.getSortKey(), Optional.of("2"));
+        Thread.sleep(5000);
+        assertNotEquals(Optional.empty(), shortLeaseLockClientForRangeKeyTable.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_1));
+        assertNotEquals(Optional.empty(), shortLeaseLockClientForRangeKeyTable.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_2));
     }
 
     @Test
@@ -143,8 +185,17 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testAcquireLockLeaveData() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testReleasingLockWithSortKey() throws IOException, LockNotGrantedException, InterruptedException {
+        final LockItem item = this.lockClientWithHeartbeatingForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1_SORT_1);
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+        assertEquals(Optional.empty(), this.lockClientWithHeartbeatingForRangeKeyTable.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_WITH_NO_WAIT_SORT_1));
+        item.close();
+        assertNotEquals(Optional.empty(), this.lockClientWithHeartbeatingForRangeKeyTable.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_WITH_NO_WAIT_SORT_1));
+    }
 
+    @Test
+    public void testAcquireLockLeaveData() throws IOException, LockNotGrantedException, InterruptedException {
         final String data = "testAcquireLockLeaveData";
         LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
         assertEquals(item.getPartitionKey(), "testKey1");
@@ -157,6 +208,705 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         assertEquals(data, new String(item.getData().get().array()));
         item.close();
+    }
+
+    @Test
+    public void testAcquireLockLeaveData_rvnChanged() throws IOException, LockNotGrantedException, InterruptedException {
+        final String data = "testAcquireLockLeaveData";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
+        item = this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get();
+        assertTrue(item.isReleased());
+
+        // report a different RVN from whats in ddb
+        item.updateRecordVersionNumber(UUID.randomUUID().toString(), 0 ,0);
+        doReturn(Optional.of(item)).when(lockClient).getLockFromDynamoDB(Mockito.any(GetLockOptions.class));
+
+        try {
+            item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE);
+            assertEquals(data, new String(item.getData().get().array()));
+            item.close();
+        } catch (LockNotGrantedException e) {
+            fail("Lock should not fail to acquire due to incorrect RVN - consistent data not enabled");
+        }
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataWithSortKey() throws IOException, LockNotGrantedException, InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData
+                (ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock("testKey1", Optional.of("1")));
+        assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get().isReleased());
+
+        item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_SORT_1);
+
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataWithSortKey_rvnChanged() throws IOException, LockNotGrantedException, InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData
+                (ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock("testKey1", Optional.of("1")));
+        item = this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get();
+        assertTrue(item.isReleased());
+
+        // report a different RVN from whats in ddb
+        item.updateRecordVersionNumber(UUID.randomUUID().toString(), 0 ,0);
+        doReturn(Optional.of(item)).when(lockClientForRangeKeyTable).getLockFromDynamoDB(Mockito.any(GetLockOptions.class));
+
+        try {
+            item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_SORT_1);
+            assertEquals(data, new String(item.getData().get().array()));
+            item.close();
+        } catch (LockNotGrantedException e) {
+            fail("Lock should not fail to acquire due to incorrect RVN - consistent data not enabled");
+        }
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataConsistentData() throws IOException, LockNotGrantedException, InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
+        assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get().isReleased());
+
+        item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_CONSISTENT_DATA_TRUE);
+
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+
+    @Test
+    public void testAcquireLockLeaveDataConsistentData_rvnChanged() throws IOException, LockNotGrantedException, InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
+        item = this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get();
+        assertTrue(item.isReleased());
+
+        // report a different RVN from whats in ddb
+        item.updateRecordVersionNumber(UUID.randomUUID().toString(), 0 ,0);
+        doReturn(Optional.of(item)).when(lockClient).getLockFromDynamoDB(Mockito.any(GetLockOptions.class));
+
+        try {
+            item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_CONSISTENT_DATA_TRUE);
+            fail("Lock should fail to acquire due to incorrect RVN with consistent data enabled");
+        } catch (LockNotGrantedException e) {
+        }
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataConsistentDataWithSortKey() throws IOException, LockNotGrantedException, InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1")
+                .withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock("testKey1", Optional.of("1")));
+        assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1")
+                .withSortKey("1").build()).get().isReleased());
+
+        item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_CONSISTENT_DATA_TRUE_SORT_1);
+
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataConsistentDataWithSortKey_rvnChanged() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1")
+                .withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock("testKey1", Optional.of("1")));
+        item = this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get();
+        assertTrue(item.isReleased());
+
+        // report a different RVN from whats in ddb
+        item.updateRecordVersionNumber(UUID.randomUUID().toString(), 0 ,0);
+        doReturn(Optional.of(item)).when(lockClientForRangeKeyTable).getLockFromDynamoDB(Mockito.any(GetLockOptions.class));
+
+        try {
+            item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_CONSISTENT_DATA_TRUE_SORT_1);
+            fail("Lock should fail to acquire due to incorrect RVN with consistent data enabled");
+        } catch (LockNotGrantedException e) {
+        }
+    }
+
+
+    @Test
+    public void testAcquireLockLeaveDataWhenUpdateExistingLockTrue() throws IOException, LockNotGrantedException, InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        final String lockPartitionKey = "testKey1";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder(lockPartitionKey).withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), lockPartitionKey);
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock(lockPartitionKey, Optional.empty()));
+        assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder(lockPartitionKey).build()).get().isReleased());
+
+        item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE);
+
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataWhenUpdateExistingLockTrue_rvnChanged() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        final String lockPartitionKey = "testKey1";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder(lockPartitionKey).withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), lockPartitionKey);
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock(lockPartitionKey, Optional.empty()));
+        item = this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder(lockPartitionKey).build()).get();
+        assertTrue(item.isReleased());
+
+        // report a different RVN from whats in ddb
+        item.updateRecordVersionNumber(UUID.randomUUID().toString(), 0 ,0);
+        doReturn(Optional.of(item)).when(lockClient).getLockFromDynamoDB(Mockito.any(GetLockOptions.class));
+
+        try {
+            item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE);
+            assertEquals(data, new String(item.getData().get().array()));
+            item.close();
+        } catch (LockNotGrantedException e) {
+            fail("Lock should not fail to acquire due to incorrect RVN - consistent data not enabled");
+        }
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataWhenUpdateExistingLockTrueWithSortKey() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        final String lockPartitionKey = "testKey1";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey("1")
+                .withData(ByteBuffer.wrap(data.getBytes())).build());
+
+        assertEquals(item.getPartitionKey(), lockPartitionKey);
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock(lockPartitionKey, Optional.of("1")));
+        assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder(lockPartitionKey)
+                .withSortKey("1").build()).get().isReleased());
+
+        item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_SORT_1);
+
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataWhenUpdateExistingLockTrueWithSortKey_rvnChanged() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        final String lockPartitionKey = "testKey1";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey("1")
+                .withData(ByteBuffer.wrap(data.getBytes())).build());
+
+        assertEquals(item.getPartitionKey(), lockPartitionKey);
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock(lockPartitionKey, Optional.of("1")));
+        item = this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder(lockPartitionKey).withSortKey("1").build()).get();
+        assertTrue(item.isReleased());
+
+        // report a different RVN from whats in ddb
+        item.updateRecordVersionNumber(UUID.randomUUID().toString(), 0 ,0);
+        doReturn(Optional.of(item)).when(lockClient).getLockFromDynamoDB(Mockito.any(GetLockOptions.class));
+
+        try {
+            item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_SORT_1);
+            assertEquals(data, new String(item.getData().get().array()));
+            item.close();
+        } catch (LockNotGrantedException e) {
+            fail("Lock should not fail to acquire due to incorrect RVN - consistent data not enabled");
+        }
+    }
+
+
+    @Test
+    public void testAcquireLockLeaveDataConsistentDataWhenUpdateExistingLockTrue() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        final String lockPartitionKey = "testKey1";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder(lockPartitionKey).withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), lockPartitionKey);
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock(lockPartitionKey, Optional.empty()));
+        assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder(lockPartitionKey).build()).get().isReleased());
+
+        item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_CONSISTENT_DATA_TRUE);
+
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataConsistentDataWhenUpdateExistingLockTrue_rvnChanged() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        final String lockPartitionKey = "testKey1";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder(lockPartitionKey).withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), lockPartitionKey);
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock(lockPartitionKey, Optional.empty()));
+        item = this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder(lockPartitionKey).build()).get();
+        assertTrue(item.isReleased());
+
+        // report a different RVN from whats in ddb
+        item.updateRecordVersionNumber(UUID.randomUUID().toString(), 0 ,0);
+        doReturn(Optional.of(item)).when(lockClient).getLockFromDynamoDB(Mockito.any(GetLockOptions.class));
+
+        try {
+            item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_CONSISTENT_DATA_TRUE);
+            fail("Lock should fail to acquire due to incorrect RVN with consistent data enabled");
+        } catch (LockNotGrantedException e) {
+        }
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataConsistentDataWhenUpdateExistingLockTrueWithSortKey() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        final String lockPartitionKey = "testKey1";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey("1")
+                .withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), lockPartitionKey);
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock(lockPartitionKey, Optional.of("1")));
+        assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder(lockPartitionKey).withSortKey("1").build()).get().isReleased());
+
+        item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_CONSISTENT_DATA_TRUE_SORT_1);
+
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockLeaveDataConsistentDataWhenUpdateExistingLockTrueWithSortKey_rvnChanged() throws IOException,
+            LockNotGrantedException, InterruptedException {
+
+        final String data = "testAcquireLockLeaveData";
+        final String lockPartitionKey = "testKey1";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey("1")
+                .withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), lockPartitionKey);
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock(lockPartitionKey, Optional.of("1")));
+        item = this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder(lockPartitionKey).withSortKey("1").build()).get();
+        assertTrue(item.isReleased());
+
+        // report a different RVN from whats in ddb
+        item.updateRecordVersionNumber(UUID.randomUUID().toString(), 0 ,0);
+        doReturn(Optional.of(item)).when(lockClientForRangeKeyTable).getLockFromDynamoDB(Mockito.any(GetLockOptions.class));
+
+        try {
+            item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_CONSISTENT_DATA_TRUE_SORT_1);
+            fail("Lock should fail to acquire due to incorrect RVN with consistent data enabled");
+        } catch (LockNotGrantedException e) {
+        }
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenNotUpdateExistingLock_LockDoesNotExist() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        try {
+            this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE);
+            fail("Acquire lock should fail with LockNotGrantedException");
+        } catch (LockNotGrantedException e) {
+            //expected exception
+        }
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenNotUpdateExistingLockConsistentData_LockDoesNotExist() throws IOException,
+            LockNotGrantedException, InterruptedException {
+
+        try {
+            this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE_CONSISTENT_DATA_TRUE);
+            fail("Acquire lock should fail with LockNotGrantedException");
+        } catch (LockNotGrantedException e) {
+            //expected exception
+        }
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenNotUpdateExistingLockWithSortKey_LockDoesNotExist() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        try {
+            this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE_SORT_1);
+            fail("Acquire lock should fail with LockNotGrantedException");
+        } catch (LockNotGrantedException e) {
+            //expected exception
+        }
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenNotUpdateExistingLockConsistentDataWithSortKey_LockDoesNotExist() throws IOException,
+            LockNotGrantedException, InterruptedException {
+
+        try {
+            this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE_CONSISTENT_DATA_TRUE_SORT_1);
+            fail("Acquire lock should fail with LockNotGrantedException");
+        } catch (LockNotGrantedException e) {
+            //expected exception
+        }
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenUpdateExistingLock_LockDoesNotExist() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        try {
+            this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE);
+            fail("Acquire lock should fail with LockNotGrantedException");
+        } catch (LockNotGrantedException e) {
+            //expected exception
+        }
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentData_LockDoesNotExist() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        try {
+            this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_CONSISTENT_DATA_TRUE);
+            fail("Acquire lock should fail with LockNotGrantedException");
+        } catch (LockNotGrantedException e) {
+            //expected exception
+        }
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenUpdateExistingLockWithSortKey_LockDoesNotExist() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        try {
+            this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_SORT_1);
+            fail("Acquire lock should fail with LockNotGrantedException");
+        } catch (LockNotGrantedException e) {
+            //expected exception
+        }
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentDataWithSortKey_LockDoesNotExist() throws IOException,
+            LockNotGrantedException, InterruptedException {
+
+        try {
+            this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_CONSISTENT_DATA_TRUE_SORT_1);
+            fail("Acquire lock should fail with LockNotGrantedException");
+        } catch (LockNotGrantedException e) {
+            //expected exception
+        }
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenNotUpdateExistingLock_LockExists() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockMustExist";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
+        assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get().isReleased());
+
+        item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE);
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenNotUpdateExistingLockConsistentData_LockExists() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockMustExist";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
+        assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get().isReleased());
+
+        item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE_CONSISTENT_DATA_TRUE);
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenNotUpdateExistingLockWithSortKey_LockExists() throws IOException, LockNotGrantedException,
+            InterruptedException {
+
+        final String data = "testAcquireLockMustExist";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock("testKey1", Optional.of("1")));
+        assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get().isReleased());
+
+        item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE_SORT_1);
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenNotUpdateExistingLockConsistentDataWithSortKey_LockExists() throws IOException,
+            LockNotGrantedException, InterruptedException {
+
+        final String data = "testAcquireLockMustExist";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock("testKey1", Optional.of("1")));
+        assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get().isReleased());
+
+        item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE_CONSISTENT_DATA_TRUE_SORT_1);
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenUpdateExistingLock_LockExist() throws IOException, LockNotGrantedException, InterruptedException {
+        final String data = "testAcquireLockMustExist";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
+        assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get().isReleased());
+
+        item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE);
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentData_LockExist() throws IOException, LockNotGrantedException, InterruptedException {
+        final String data = "testAcquireLockMustExist";
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
+        assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get().isReleased());
+
+        item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_CONSISTENT_DATA_TRUE);
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenUpdateExistingLockWithSortKey_LockExist() throws IOException, LockNotGrantedException,
+            InterruptedException {
+        final String data = "testAcquireLockMustExist";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock("testKey1", Optional.of("1")));
+        assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get().isReleased());
+
+        item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_SORT_1);
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentDataWithSortKey_LockExist() throws IOException, LockNotGrantedException, InterruptedException {
+        final String data = "testAcquireLockMustExist";
+        LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+        assertEquals(item.getSortKey(), Optional.of("1"));
+
+        this.lockClientForRangeKeyTable.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
+        assertEquals(Optional.empty(), this.lockClientForRangeKeyTable.getLock("testKey1", Optional.of("1")));
+        assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get().isReleased());
+
+        item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_CONSISTENT_DATA_TRUE_SORT_1);
+        assertEquals(data, new String(item.getData().get().array()));
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockBasicWithUpdateExistingLockTrue() throws InterruptedException {
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withUpdateExistingLockRecord(true).build());
+        assertEquals(item.getPartitionKey(), "testKey1");
+    }
+
+    @Test
+    public void testAcquireLockWhenLockIsReleasedAndUpdateExistingLockIsTruePreserveAttributesFromPreviousLock() throws InterruptedException, IOException {
+        final AmazonDynamoDBLockClient lockClient1 = new AmazonDynamoDBLockClient(
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+                        .withTimeUnit(TimeUnit.SECONDS).withSortKeyName("rangeKey").withCreateHeartbeatBackgroundThread(false).build());
+        final AmazonDynamoDBLockClient lockClient2 = new AmazonDynamoDBLockClient(
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+                        .withTimeUnit(TimeUnit.SECONDS).withSortKeyName("rangeKey").withCreateHeartbeatBackgroundThread(false).build());
+        final String additionalValue = "doNotDelete";
+        final String lockPartitionKey = "testKey1";
+        final String lockSortKey = "1";
+        final Map<String, AttributeValue> additional = new HashMap<>();
+        additional.put(additionalValue, new AttributeValue().withS(additionalValue));
+        //acquire first lock
+        final RequestMetricCollector requestMetricCollector = Mockito.mock(RequestMetricCollector.class);
+        final Optional<LockItem> lockItem1 = lockClient1.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey(lockSortKey).withDeleteLockOnRelease(false).withAdditionalAttributes(additional).build());
+
+        assertNotEquals(Optional.empty(), lockItem1);
+        lockClient1.releaseLock(lockItem1.get());
+        //acquire the same lock released above
+        final Optional<LockItem> lockItem2 = lockClient2.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey(lockSortKey).withRequestMetricCollector(requestMetricCollector).withUpdateExistingLockRecord(true).build());
+
+        assertTrue(lockItem2.isPresent());
+        assertEquals(INTEGRATION_TESTER_2, lockItem2.get().getOwnerName());
+
+        /* Get the complete record for the lock to verify other fields are not replaced*/
+        Map<String, AttributeValue> key = new HashMap<>();
+        key.put(lockClient1Options.getPartitionKeyName(), new AttributeValue().withS(lockPartitionKey));
+        key.put("rangeKey", new AttributeValue().withS(lockSortKey));
+        GetItemResult result = lockClient1Options.getDynamoDBClient().getItem(new GetItemRequest().withTableName(RANGE_KEY_TABLE_NAME).withKey(key));
+        Map<String, AttributeValue> currentLockRecord = result.getItem();
+
+        //any values left from old locks should not be removed
+        assertNotNull(currentLockRecord.get(additionalValue));
+        String additionalValuesExpected = currentLockRecord.get(additionalValue).getS();
+        assertEquals(additionalValue, additionalValuesExpected);
+
+        lockClient1.close();
+        lockClient2.close();
+    }
+
+    @Test
+    public void testAcquireLockWithSortKeyWhenLockIsExpiredAndUpdateExistingLockIsTruePreserveAdditionalAttributesFromPreviousLock() throws InterruptedException, IOException {
+        final AmazonDynamoDBLockClient lockClient1 = new AmazonDynamoDBLockClient(
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+                .withTimeUnit(TimeUnit.SECONDS).withSortKeyName("rangeKey").withCreateHeartbeatBackgroundThread(false).build());
+        final AmazonDynamoDBLockClient lockClient2 = new AmazonDynamoDBLockClient(
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+                        .withTimeUnit(TimeUnit.SECONDS).withSortKeyName("rangeKey").withCreateHeartbeatBackgroundThread(false).build());
+        //add additional values to verify they are preserved always
+        final String additionalValue = "doNotDelete";
+        final String lockPartitionKey = "testKey1";
+        final String lockSortKey = "1";
+        Map<String, AttributeValue> additional = new HashMap<>();
+        additional.put(additionalValue, new AttributeValue().withS(additionalValue));
+
+        final Optional<LockItem> lockItem1 = lockClient1.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey(lockSortKey).withDeleteLockOnRelease(false).withAdditionalAttributes(additional).build());
+        assertNotEquals(Optional.empty(), lockItem1);
+
+        final Optional<LockItem> lockItem2 = lockClient2.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey(lockSortKey).withUpdateExistingLockRecord(true).build());
+        assertTrue(lockItem2.isPresent());
+        assertEquals(INTEGRATION_TESTER_2, lockItem2.get().getOwnerName());
+
+        /* Get the complete record for the lock to verify other fields are not replaced*/
+        Map<String, AttributeValue> key = new HashMap<>();
+        key.put(lockClient1Options.getPartitionKeyName(), new AttributeValue().withS(lockPartitionKey));
+        key.put("rangeKey", new AttributeValue().withS(lockSortKey));
+        GetItemResult result = this.dynamoDBMock.getItem(new GetItemRequest().withTableName(RANGE_KEY_TABLE_NAME).withKey(key));
+        Map<String, AttributeValue> currentLockRecord = result.getItem();
+        //any values left from old locks should not be removed
+        assertNotNull(currentLockRecord.get(additionalValue));
+        String additionalValuesExpected = currentLockRecord.get(additionalValue).getS();
+        assertEquals(additionalValue, additionalValuesExpected);
+
+        lockClient1.close();
+        lockClient2.close();
+    }
+
+    @Test
+    public void testAcquireLockWhenLockIsExpiredAndUpdateExistingLockIsTruePreserveAdditionalAttributesFromPreviousLock() throws InterruptedException, IOException {
+        final AmazonDynamoDBLockClient lockClient1 = new AmazonDynamoDBLockClient(
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+                        .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).build());
+        final AmazonDynamoDBLockClient lockClient2 = new AmazonDynamoDBLockClient(
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+                        .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).build());
+        //add additional values to verify they are preserved always
+        final String additionalValue = "doNotDelete";
+        final String lockPartitionKey = "testKey1";
+        Map<String, AttributeValue> additional = new HashMap<>();
+        additional.put(additionalValue, new AttributeValue().withS(additionalValue));
+
+        final Optional<LockItem> lockItem1 = lockClient1.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withDeleteLockOnRelease(false).withAdditionalAttributes(additional).build());
+        assertNotEquals(Optional.empty(), lockItem1);
+
+        /* try stealing the lock once it is expired */
+        final Optional<LockItem> lockItem2 = lockClient2.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withUpdateExistingLockRecord(true).build());
+        assertTrue(lockItem2.isPresent());
+        assertEquals(INTEGRATION_TESTER_2, lockItem2.get().getOwnerName());
+
+        /* Get the complete record for the lock to verify other fields are not replaced*/
+        Map<String, AttributeValue> key = new HashMap<>();
+        key.put(lockClient1Options.getPartitionKeyName(), new AttributeValue().withS(lockPartitionKey));
+
+        GetItemResult result = this.dynamoDBMock.getItem(new GetItemRequest().withTableName(TABLE_NAME).withKey(key));
+        Map<String, AttributeValue> currentLockRecord = result.getItem();
+        //any values left from old locks should not be removed
+        assertNotNull(currentLockRecord.get(additionalValue));
+        String additionalValuesExpected = currentLockRecord.get(additionalValue).getS();
+        assertEquals(additionalValue, additionalValuesExpected);
+
+        lockClient1.close();
+        lockClient2.close();
     }
 
     @Test
@@ -330,7 +1080,6 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
     @Test
     public void testReleaseLockBestEffort() throws IOException, LockNotGrantedException, InterruptedException {
-        final AmazonDynamoDB dynamoDBMock = Mockito.spy(this.dynamoDBMock);
         final AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(this.lockClient1Options);
 
         final LockItem item = client.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
@@ -343,7 +1092,6 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
     @Test(expected = AmazonClientException.class)
     public void testReleaseLockNotBestEffort() throws IOException, LockNotGrantedException, InterruptedException {
-        final AmazonDynamoDB dynamoDBMock = Mockito.spy(this.dynamoDBMock);
         final AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(AmazonDynamoDBLockClientOptions.builder(dynamoDBMock, TABLE_NAME).withOwnerName(LOCALHOST).build());
 
         final LockItem item = client.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
