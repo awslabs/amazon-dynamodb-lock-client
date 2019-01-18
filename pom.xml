@@ -2,14 +2,14 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.amazonaws</groupId>
     <artifactId>dynamodb-lock-client</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>jar</packaging>
     <name>Amazon DynamoDB Lock Client</name>
     <url>https://github.com/awslabs/dynamodb-lock-client</url>
     <description>The Amazon DynamoDB Lock Client is a general purpose distributed locking library built on DynamoDB.</description>
     <scm>
         <url>git@github.com:awslabs/dynamodb-lock-client.git</url>
-        <tag>1.0.0</tag>
+        <tag>1.1.0</tag>
     </scm>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -17,35 +17,35 @@
         <dynamodb-local.port>4567</dynamodb-local.port>
         <dynamodb-local.endpoint>http://localhost:${dynamodb-local.port}</dynamodb-local.endpoint>
         <jdk.version>1.8</jdk.version>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <aws.java.sdk.version>1.11.160</aws.java.sdk.version>
-        <dependency.plugin.version>3.0.0</dependency.plugin.version>
-        <maven.assembly.plugin.version>3.0.0</maven.assembly.plugin.version>
-        <maven.compiler.plugin.version>3.6.1</maven.compiler.plugin.version>
-        <maven.surefire.version>2.20</maven.surefire.version>
-        <maven.failsafe.version>2.20</maven.failsafe.version>
-        <maven.resources.plugin.version>3.0.2</maven.resources.plugin.version>
-        <exec.maven.plugin.version>1.6.0</exec.maven.plugin.version>
+
+        <aws.java.sdk.version>1.11.475</aws.java.sdk.version>
+        <dependency.plugin.version>3.1.1</dependency.plugin.version>
+        <maven.assembly.plugin.version>3.1.1</maven.assembly.plugin.version>
+        <maven.compiler.plugin.version>3.8.0</maven.compiler.plugin.version>
+        <maven.surefire.version>2.22.1</maven.surefire.version>
+        <maven.failsafe.version>2.22.1</maven.failsafe.version>
+        <maven.resources.plugin.version>3.1.0</maven.resources.plugin.version>
         <download.maven.plugin.version>1.2.1</download.maven.plugin.version>
-        <build.helper.maven.plugin.version>1.8</build.helper.maven.plugin.version>
+        <build.helper.maven.plugin.version>3.0.0</build.helper.maven.plugin.version>
         <mockito.version>1.10.19</mockito.version>
         <powermock.version>1.6.4</powermock.version>
         <hamcrest.version>1.3</hamcrest.version>
-        <jacoco.version>0.7.9</jacoco.version>
+        <jacoco.version>0.8.2</jacoco.version>
+        <commons-logging.version>1.2</commons-logging.version>
+        <maven-enforcer-plugin.version>3.0.0-M2</maven-enforcer-plugin.version>
+        <spotbugs-maven-plugin.version>3.1.10</spotbugs-maven-plugin.version>
+        <junit.version>4.12</junit.version>
+
         <build.profile.id>dev</build.profile.id>
         <jacoco.it.execution.data.file>${project.build.directory}/coverage-reports/jacoco-it.exec</jacoco.it.execution.data.file>
         <jacoco.ut.execution.data.file>${project.build.directory}/coverage-reports/jacoco-ut.exec</jacoco.ut.execution.data.file>
-        <commons-logging.version>1.2</commons-logging.version>
-        <maven-enforcer-plugin.version>1.4.1</maven-enforcer-plugin.version>
-        <findbugs-maven-plugin.version>3.0.4</findbugs-maven-plugin.version>
         <jacoco-aggregate-destFile>${project.build.directory}/coverage-reports/aggregate.exec</jacoco-aggregate-destFile>
-        <junit.version>4.12</junit.version>
-        <integration-test.category>*/BasicLockClientTests.java,*/GetAllLocksTests.java</integration-test.category>
+        <integration-test.category>*/BasicLockClientTests.java,*/GetAllLocksTests.java,*/ConsistentLockDataStressTest.java</integration-test.category>
     </properties>
     <developers>
         <developer>
             <name>Alexander Patrikalakis</name>
-            <email>amcp@amazon.co.jp</email>
+            <email>amcpatrikalakis@gmail.com</email>
             <url>https://www.linkedin.com/in/amcpatrix/en</url>
         </developer>
         <developer>
@@ -57,6 +57,21 @@
             <name>David Yanacek</name>
             <email>dyanacek@amazon.com</email>
             <url>https://www.linkedin.com/in/david-yanacek-5927362/</url>
+        </developer>
+        <developer>
+            <name>Mukti Ranjan Sahoo</name>
+            <email>mukti@amazon.com</email>
+            <url>https://www.linkedin.com/in/mukti-ranjan-sahoo-50051098/</url>
+        </developer>
+        <developer>
+            <name>Amey Jain</name>
+            <email>jainame@amazon.com</email>
+            <url>https://www.linkedin.com/in/ameyjain/</url>
+        </developer>
+        <developer>
+            <name>Sathish Kumar A C</name>
+            <email>sath@amazon.com</email>
+            <url>https://www.linkedin.com/in/acsathish</url>
         </developer>
     </developers>
     <inceptionYear>2013</inceptionYear>
@@ -81,7 +96,7 @@
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpcore</artifactId>
-            <version>4.4.4</version>
+            <version>4.4.9</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
@@ -179,9 +194,9 @@
                 </executions>
             </plugin>
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>findbugs-maven-plugin</artifactId>
-                <version>${findbugs-maven-plugin.version}</version>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>${spotbugs-maven-plugin.version}</version>
                 <configuration>
                     <effort>Max</effort>
                     <threshold>Low</threshold>
@@ -280,7 +295,7 @@
                                         <limit>
                                             <counter>BRANCH</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.93</minimum>
+                                            <minimum>0.92</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
@@ -401,7 +416,7 @@
                     <plugin>
                         <groupId>com.bazaarvoice.maven.plugins</groupId>
                         <artifactId>process-exec-maven-plugin</artifactId>
-                        <version>0.4</version>
+                        <version>0.8</version>
                         <executions>
                             <execution>
                                 <id>start-jar-process</id>

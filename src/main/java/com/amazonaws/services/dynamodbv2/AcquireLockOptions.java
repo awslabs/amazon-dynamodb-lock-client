@@ -1,5 +1,5 @@
 /**
- * Copyright 2013-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2013-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * <p>
  * Licensed under the Amazon Software License (the "License").
  * You may not use this file except in compliance with the License.
@@ -27,7 +27,9 @@ import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 /**
  * Provides options for acquiring a lock when calling the acquireLock() method.
  *
- * @author <a href="mailto:dyanacek@amazon.com">David Yanacek</a>, <a href="mailto:slutsker@amazon.com">Sasha Slutsker</a>
+ * @author <a href="mailto:dyanacek@amazon.com">David Yanacek</a>
+ * @author <a href="mailto:slutsker@amazon.com">Sasha Slutsker</a>
+ * @author <a href="mailto:amcp@amazon.com">Alexander Patrikalakis</a>
  */
 public class AcquireLockOptions {
     private final String partitionKey;
@@ -35,13 +37,22 @@ public class AcquireLockOptions {
     private final Optional<ByteBuffer> data;
     private final Boolean replaceData;
     private final Boolean deleteLockOnRelease;
+    private final Boolean acquireOnlyIfLockAlreadyExists;
     private final Long refreshPeriod;
     private final Long additionalTimeToWaitForLock;
     private final TimeUnit timeUnit;
     private final Map<String, AttributeValue> additionalAttributes;
+    private final Boolean updateExistingLockRecord;
+    private final Boolean acquireReleasedLocksConsistently;
     private final Optional<SessionMonitor> sessionMonitor;
     private final Optional<RequestMetricCollector> requestMetricCollector;
 
+    /**
+     * Setting this flag to true will prevent the thread from being blocked (put to sleep) for the lease duration and
+     * instead will return the call with the lock not granted exception back to the caller. It is up to the caller to
+     * optionally back-off and retry and to acquire the lock.
+     */
+    private final boolean shouldSkipBlockingWait;
 
     /**
      * A builder for setting up an AcquireLockOptions object. This allows clients to configure
@@ -54,15 +65,19 @@ public class AcquireLockOptions {
         private Optional<ByteBuffer> data;
         private Boolean replaceData;
         private Boolean deleteLockOnRelease;
+        private Boolean acquireOnlyIfLockAlreadyExists;
         private Long refreshPeriod;
         private Long additionalTimeToWaitForLock;
         private TimeUnit timeUnit;
         private Map<String, AttributeValue> additionalAttributes;
         private Optional<RequestMetricCollector> requestMetricCollector;
+        private Boolean updateExistingLockRecord;
+        private Boolean acquireReleasedLocksConsistently;
 
         private long safeTimeWithoutHeartbeat;
         private Optional<Runnable> sessionMonitorCallback;
         private boolean isSessionMonitorSet = false;
+        private boolean shouldSkipBlockingWait;
 
         AcquireLockOptionsBuilder(final String partitionKey) {
             this.partitionKey = partitionKey;
@@ -72,6 +87,10 @@ public class AcquireLockOptions {
             this.data = Optional.empty();
             this.replaceData = true;
             this.deleteLockOnRelease = true;
+            this.acquireOnlyIfLockAlreadyExists = false;
+            this.updateExistingLockRecord = false;
+            this.shouldSkipBlockingWait = false;
+            this.acquireReleasedLocksConsistently = false;
         }
 
         /**
@@ -121,6 +140,20 @@ public class AcquireLockOptions {
         }
 
         /**
+         * Sets whether or not to allow acquiring locks if the lock does not exist already
+         *
+         * @param acquireOnlyIfLockAlreadyExists If true, locks will not be granted on items which do not already
+         *                                       exist.
+         *                                       If false (default value), lock item will be created if it does not
+         *                                       exist already.
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AcquireLockOptionsBuilder withAcquireOnlyIfLockAlreadyExists(final Boolean acquireOnlyIfLockAlreadyExists) {
+            this.acquireOnlyIfLockAlreadyExists = acquireOnlyIfLockAlreadyExists;
+            return this;
+        }
+
+        /**
          * @param refreshPeriod How long to wait before trying to get the lock again (if
          *                      set to 10 seconds, for example, it would attempt to do so
          *                      every 10 seconds). If set, TimeUnit must also be set.
@@ -161,6 +194,53 @@ public class AcquireLockOptions {
          */
         public AcquireLockOptionsBuilder withAdditionalAttributes(final Map<String, AttributeValue> additionalAttributes) {
             this.additionalAttributes = additionalAttributes;
+            return this;
+        }
+
+        /**
+         * With this being true lock client will only update the current lock record if present otherwise create a new one.
+         *
+         *
+         * @param updateExistingLockRecord whether lock client should always create a new lock record and
+         *                                removing any other entries not known to lock client
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AcquireLockOptionsBuilder withUpdateExistingLockRecord(final Boolean updateExistingLockRecord) {
+            this.updateExistingLockRecord = updateExistingLockRecord;
+            return this;
+        }
+
+        /**
+         * With this being true, the lock client will not block the running thread and wait for lock, rather will fast fail the request,
+         * so that the caller can either choose to back-off and process the same request or start processing a new request.
+         *
+         *
+         * @param shouldSkipBlockingWait whether lock client should skip the logic to block the thread if lock is owned by another machine
+         *                                  and lock is still active.
+         *
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AcquireLockOptionsBuilder withShouldSkipBlockingWait(final boolean shouldSkipBlockingWait) {
+            this.shouldSkipBlockingWait = shouldSkipBlockingWait;
+            return this;
+        }
+
+        /**
+         * <p>
+         * With this being true, the lock client will ensure that released locks are acquired consistently in order to preserve existing
+         * lock data in dynamodb.
+         * </p>
+         *
+         * <p>
+         *  This option is currently disabled by default.  Will be enabled by default in the next major release.
+         * </p>
+         *
+         * @param acquireReleasedLocksConsistently whether the lock client should acquire released locks consistently
+         *
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AcquireLockOptionsBuilder withAcquireReleasedLocksConsistently(final boolean acquireReleasedLocksConsistently) {
+            this.acquireReleasedLocksConsistently = acquireReleasedLocksConsistently;
             return this;
         }
 
@@ -249,8 +329,9 @@ public class AcquireLockOptions {
             } else {
                 sessionMonitor = Optional.empty();
             }
-            return new AcquireLockOptions(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease, this.refreshPeriod,
-                this.additionalTimeToWaitForLock, this.timeUnit, this.additionalAttributes, sessionMonitor, this.requestMetricCollector);
+            return new AcquireLockOptions(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease, this.acquireOnlyIfLockAlreadyExists,
+                    this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit, this.additionalAttributes, sessionMonitor, this.requestMetricCollector,
+                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently);
         }
 
         @Override
@@ -258,7 +339,8 @@ public class AcquireLockOptions {
             return "AcquireLockOptions.AcquireLockOptionsBuilder(key=" + this.partitionKey + ", sortKey=" + this.sortKey + ", data=" + this.data + ", replaceData="
                 + this.replaceData + ", deleteLockOnRelease=" + this.deleteLockOnRelease + ", refreshPeriod=" + this.refreshPeriod + ", additionalTimeToWaitForLock="
                 + this.additionalTimeToWaitForLock + ", timeUnit=" + this.timeUnit + ", additionalAttributes=" + this.additionalAttributes + ", safeTimeWithoutHeartbeat="
-                + this.safeTimeWithoutHeartbeat + ", sessionMonitorCallback=" + this.sessionMonitorCallback + ", requestMetricCollector=" + this.requestMetricCollector + ")";
+                + this.safeTimeWithoutHeartbeat + ", sessionMonitorCallback=" + this.sessionMonitorCallback + ", requestMetricCollector="
+                    + this.requestMetricCollector + ", acquireReleasedLocksConsistently=" + this.acquireReleasedLocksConsistently + ")";
         }
     }
 
@@ -274,21 +356,26 @@ public class AcquireLockOptions {
     }
 
     private AcquireLockOptions(final String partitionKey, final Optional<String> sortKey, final Optional<ByteBuffer> data, final Boolean replaceData,
-        final Boolean deleteLockOnRelease, final Long refreshPeriod, final Long additionalTimeToWaitForLock, final TimeUnit timeUnit,
-        final Map<String, AttributeValue> additionalAttributes, final Optional<SessionMonitor> sessionMonitor,
-        final Optional<RequestMetricCollector> requestMetricCollector) {
-        this.partitionKey = partitionKey;
-        this.sortKey = sortKey;
-        this.data = data;
-        this.replaceData = replaceData;
-        this.deleteLockOnRelease = deleteLockOnRelease;
-        this.refreshPeriod = refreshPeriod;
-        this.additionalTimeToWaitForLock = additionalTimeToWaitForLock;
-        this.timeUnit = timeUnit;
-        this.additionalAttributes = additionalAttributes;
-        this.sessionMonitor = sessionMonitor;
-        this.requestMetricCollector = requestMetricCollector;
-    }
+       final Boolean deleteLockOnRelease, final Boolean acquireOnlyIfLockAlreadyExists, final Long refreshPeriod, final Long additionalTimeToWaitForLock,
+       final TimeUnit timeUnit, final Map<String, AttributeValue> additionalAttributes, final Optional<SessionMonitor> sessionMonitor,
+       final Optional<RequestMetricCollector> requestMetricCollector, final Boolean updateExistingLockRecord, final Boolean shouldSkipBlockingWait,
+       final Boolean acquireReleasedLocksConsistently) {
+       this.partitionKey = partitionKey;
+       this.sortKey = sortKey;
+       this.data = data;
+       this.replaceData = replaceData;
+       this.deleteLockOnRelease = deleteLockOnRelease;
+       this.acquireOnlyIfLockAlreadyExists = acquireOnlyIfLockAlreadyExists;
+       this.refreshPeriod = refreshPeriod;
+       this.additionalTimeToWaitForLock = additionalTimeToWaitForLock;
+       this.timeUnit = timeUnit;
+       this.additionalAttributes = additionalAttributes;
+       this.sessionMonitor = sessionMonitor;
+       this.requestMetricCollector = requestMetricCollector;
+       this.updateExistingLockRecord = updateExistingLockRecord;
+       this.shouldSkipBlockingWait = shouldSkipBlockingWait;
+       this.acquireReleasedLocksConsistently = acquireReleasedLocksConsistently;
+   }
 
     String getPartitionKey() {
         return this.partitionKey;
@@ -308,6 +395,16 @@ public class AcquireLockOptions {
 
     Boolean getDeleteLockOnRelease() {
         return this.deleteLockOnRelease;
+    }
+
+    Boolean getUpdateExistingLockRecord() { return this.updateExistingLockRecord; }
+
+    Boolean getAcquireReleasedLocksConsistently() {
+        return this.acquireReleasedLocksConsistently;
+    }
+
+    Boolean getAcquireOnlyIfLockAlreadyExists() {
+        return this.acquireOnlyIfLockAlreadyExists;
     }
 
     Long getRefreshPeriod() {
@@ -353,19 +450,29 @@ public class AcquireLockOptions {
                 && Objects.equals(this.data, otherOptions.data)
                 && Objects.equals(this.replaceData, otherOptions.replaceData)
                 && Objects.equals(this.deleteLockOnRelease, otherOptions.deleteLockOnRelease)
+                && Objects.equals(this.acquireOnlyIfLockAlreadyExists, otherOptions.acquireOnlyIfLockAlreadyExists)
                 && Objects.equals(this.refreshPeriod, otherOptions.refreshPeriod)
                 && Objects.equals(this.additionalTimeToWaitForLock, otherOptions.additionalTimeToWaitForLock)
                 && Objects.equals(this.timeUnit, otherOptions.timeUnit)
                 && Objects.equals(this.additionalAttributes, otherOptions.additionalAttributes)
                 && Objects.equals(this.sessionMonitor, otherOptions.sessionMonitor)
-                && Objects.equals(this.requestMetricCollector, otherOptions.requestMetricCollector);
+                && Objects.equals(this.requestMetricCollector, otherOptions.requestMetricCollector)
+                && Objects.equals(this.updateExistingLockRecord, otherOptions.updateExistingLockRecord)
+                && Objects.equals(this.shouldSkipBlockingWait, otherOptions.shouldSkipBlockingWait)
+                && Objects.equals(this.acquireReleasedLocksConsistently, otherOptions.acquireReleasedLocksConsistently);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease,
-                this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit, this.additionalAttributes,
-                this.sessionMonitor, this.requestMetricCollector);
+                this.acquireOnlyIfLockAlreadyExists, this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit,
+                this.additionalAttributes, this.sessionMonitor, this.requestMetricCollector, this.updateExistingLockRecord,
+                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently);
+
+    }
+
+    public boolean shouldSkipBlockingWait() {
+        return shouldSkipBlockingWait;
     }
 }
 

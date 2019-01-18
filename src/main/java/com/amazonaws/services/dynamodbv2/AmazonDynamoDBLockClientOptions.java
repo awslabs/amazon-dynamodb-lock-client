@@ -1,5 +1,5 @@
 /**
- * Copyright 2013-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2013-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * <p>
  * Licensed under the Amazon Software License (the "License").
  * You may not use this file except in compliance with the License.
@@ -35,6 +35,7 @@ public class AmazonDynamoDBLockClientOptions {
     protected static final Long DEFAULT_HEARTBEAT_PERIOD = 5L;
     protected static final TimeUnit DEFAULT_TIME_UNIT = TimeUnit.SECONDS;
     protected static final Boolean DEFAULT_CREATE_HEARTBEAT_BACKGROUND_THREAD = true;
+    protected static final Boolean DEFAULT_HOLD_LOCK_ON_SERVICE_UNAVAILABLE = false;
 
     private final AmazonDynamoDB dynamoDBClient;
     private final String tableName;
@@ -46,6 +47,7 @@ public class AmazonDynamoDBLockClientOptions {
     private final TimeUnit timeUnit;
     private final Boolean createHeartbeatBackgroundThread;
     private final Function<String, ThreadFactory> namedThreadCreator;
+    private final Boolean holdLockOnServiceUnavailable;
 
 
     /**
@@ -62,6 +64,7 @@ public class AmazonDynamoDBLockClientOptions {
         private Long heartbeatPeriod;
         private TimeUnit timeUnit;
         private Boolean createHeartbeatBackgroundThread;
+        private Boolean holdLockOnServiceUnavailable;
         private Function<String, ThreadFactory> namedThreadCreator;
 
         AmazonDynamoDBLockClientOptionsBuilder(final AmazonDynamoDB dynamoDBClient, final String tableName) {
@@ -95,6 +98,7 @@ public class AmazonDynamoDBLockClientOptions {
             this.sortKeyName = Optional.empty();
             this.ownerName = ownerName == null ? generateOwnerNameFromLocalhost() : ownerName;
             this.namedThreadCreator = namedThreadCreator == null ? namedThreadCreator() : namedThreadCreator;
+            this.holdLockOnServiceUnavailable = DEFAULT_HOLD_LOCK_ON_SERVICE_UNAVAILABLE;
         }
 
         AmazonDynamoDBLockClientOptionsBuilder(final AmazonDynamoDB dynamoDBClient, final String tableName, final String ownerName) {
@@ -176,6 +180,22 @@ public class AmazonDynamoDBLockClientOptions {
         }
 
         /**
+         * This parameter should be set to true only in the applications which do not have strict locking requirements.
+         * When this is set to true, on DynamoDB service unavailable errors it is possible that two different clients can hold the lock.
+         *
+         * When heartbeat fails for lease duration period, the lock expires. If this parameter is set to true, and if a heartbeat
+         * receives AmazonServiceException with a status code of HttpStatus.SC_SERVICE_UNAVAILABLE(503), the lock client will assume
+         * that the heartbeat was a success and update the local state accordingly and it will keep holding the lock.
+         *
+         * @param holdLockOnServiceUnavailable Whether or not to hold the lock if DynamoDB Service is unavailable
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AmazonDynamoDBLockClientOptionsBuilder withHoldLockOnServiceUnavailable(final Boolean holdLockOnServiceUnavailable) {
+            this.holdLockOnServiceUnavailable = holdLockOnServiceUnavailable;
+            return this;
+        }
+
+        /**
          * Builds an AmazonDynamoDBLockClientOptions. If required parametes are
          * not set, will throw an IllegalArgumentsException.
          *
@@ -186,14 +206,15 @@ public class AmazonDynamoDBLockClientOptions {
             Objects.requireNonNull(this.tableName, "Table Name must not be null");
             Objects.requireNonNull(this.ownerName, "Owner Name must not be null");
             return new AmazonDynamoDBLockClientOptions(this.dynamoDBClient, this.tableName, this.partitionKeyName, this.sortKeyName, this.ownerName, this.leaseDuration,
-                this.heartbeatPeriod, this.timeUnit, this.createHeartbeatBackgroundThread, this.namedThreadCreator);
+                this.heartbeatPeriod, this.timeUnit, this.createHeartbeatBackgroundThread, this.namedThreadCreator, this.holdLockOnServiceUnavailable);
         }
 
         @Override
         public String toString() {
             return "AmazonDynamoDBLockClientOptionsBuilder(dynamoDBClient=" + this.dynamoDBClient + ", tableName=" + this.tableName + ", partitionKeyName=" + this.partitionKeyName
                 + ", sortKeyName=" + this.sortKeyName + ", ownerName=" + this.ownerName + ", leaseDuration=" + this.leaseDuration + ", heartbeatPeriod=" + this.heartbeatPeriod
-                + ", timeUnit=" + this.timeUnit + ", createHeartbeatBackgroundThread=" + this.createHeartbeatBackgroundThread + ")";
+                + ", timeUnit=" + this.timeUnit + ", createHeartbeatBackgroundThread=" + this.createHeartbeatBackgroundThread
+                + ", holdLockOnServiceUnavailable=" + this.holdLockOnServiceUnavailable + ")";
         }
     }
 
@@ -212,7 +233,7 @@ public class AmazonDynamoDBLockClientOptions {
 
     private AmazonDynamoDBLockClientOptions(final AmazonDynamoDB dynamoDBClient, final String tableName, final String partitionKeyName, final Optional<String> sortKeyName,
         final String ownerName, final Long leaseDuration, final Long heartbeatPeriod, final TimeUnit timeUnit, final Boolean createHeartbeatBackgroundThread,
-        final Function<String, ThreadFactory> namedThreadCreator) {
+        final Function<String, ThreadFactory> namedThreadCreator, final Boolean holdLockOnServiceUnavailable) {
         this.dynamoDBClient = dynamoDBClient;
         this.tableName = tableName;
         this.partitionKeyName = partitionKeyName;
@@ -223,6 +244,7 @@ public class AmazonDynamoDBLockClientOptions {
         this.timeUnit = timeUnit;
         this.createHeartbeatBackgroundThread = createHeartbeatBackgroundThread;
         this.namedThreadCreator = namedThreadCreator;
+        this.holdLockOnServiceUnavailable = holdLockOnServiceUnavailable;
     }
 
     /**
@@ -299,5 +321,12 @@ public class AmazonDynamoDBLockClientOptions {
      */
     Function<String, ThreadFactory> getNamedThreadCreator() {
         return this.namedThreadCreator;
+    }
+
+    /**
+     * @return Whether or not to hold the lock if DynamoDB Service is unavailable
+     */
+    Boolean getHoldLockOnServiceUnavailable() {
+        return this.holdLockOnServiceUnavailable;
     }
 }

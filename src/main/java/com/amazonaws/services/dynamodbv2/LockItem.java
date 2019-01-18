@@ -1,5 +1,5 @@
 /**
- * Copyright 2013-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2013-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * <p>
  * Licensed under the Amazon Software License (the "License").
  * You may not use this file except in compliance with the License.
@@ -42,14 +42,12 @@ public class LockItem implements Closeable {
     private final String ownerName;
     private final boolean deleteLockItemOnClose;
     private final boolean isReleased;
-
     private final AtomicLong lookupTime;
     private final StringBuffer recordVersionNumber;
     private final AtomicLong leaseDuration;
     private final Map<String, AttributeValue> additionalAttributes;
 
     private final Optional<SessionMonitor> sessionMonitor;
-
 
     /**
      * Creates a lock item representing a given key. This constructor should
@@ -294,6 +292,15 @@ public class LockItem implements Closeable {
         this.recordVersionNumber.replace(0, recordVersionNumber.length(), recordVersionNumber);
         this.lookupTime.set(lastUpdateOfLock);
         this.leaseDuration.set(leaseDurationToEnsureInMilliseconds);
+    }
+
+    /**
+     * Updates the last updated time of the lock.
+     *
+     * @param lastUpdateOfLock - Time to update the lock with
+     */
+    public void updateLookUpTime(final long lastUpdateOfLock) {
+        this.lookupTime.set(lastUpdateOfLock);
     }
 
     /*
