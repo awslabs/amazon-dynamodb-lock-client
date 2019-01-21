@@ -164,5 +164,5 @@ clobbering each other's locks.
 To run all integration tests for the DynamoDB Lock client, issue the following Maven command:
 
 ```bash
-mvn clean install verify -Pintegration-tests
+mvn clean install -Pintegration-tests
 ```

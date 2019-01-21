@@ -14,9 +14,12 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <dynamodb-local.port>4567</dynamodb-local.port>
+        <dynamodblocal.version>1.11.119</dynamodblocal.version>
+        <dynamodb-local.port>8000</dynamodb-local.port>
         <dynamodb-local.endpoint>http://localhost:${dynamodb-local.port}</dynamodb-local.endpoint>
         <jdk.version>1.8</jdk.version>
+
+        <maven.source.plugin.version></maven.source.plugin.version>
 
         <aws.java.sdk.version>1.11.475</aws.java.sdk.version>
         <dependency.plugin.version>3.1.1</dependency.plugin.version>
@@ -35,6 +38,7 @@
         <maven-enforcer-plugin.version>3.0.0-M2</maven-enforcer-plugin.version>
         <spotbugs-maven-plugin.version>3.1.10</spotbugs-maven-plugin.version>
         <junit.version>4.12</junit.version>
+        <docker.maven.plugin.version>0.26.1</docker.maven.plugin.version>
 
         <build.profile.id>dev</build.profile.id>
         <jacoco.it.execution.data.file>${project.build.directory}/coverage-reports/jacoco-it.exec</jacoco.it.execution.data.file>
@@ -452,59 +456,7 @@
             <id>integration-tests</id>
             <build>
                 <plugins>
-                    <plugin>
-                        <groupId>com.googlecode.maven-download-plugin</groupId>
-                        <artifactId>download-maven-plugin</artifactId>
-                        <version>${download.maven.plugin.version}</version>
-                        <executions>
-                            <execution>
-                                <id>install-dynamodb_local</id>
-                                <phase>pre-integration-test</phase>
-                                <goals>
-                                    <goal>wget</goal>
-                                </goals>
-                                <configuration>
-                                    <url>https://s3-us-west-2.amazonaws.com/dynamodb-local/dynamodb_local_latest.zip</url>
-                                    <unpack>true</unpack>
-                                    <outputDirectory>${project.build.directory}/dynamodb</outputDirectory>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>com.bazaarvoice.maven.plugins</groupId>
-                        <artifactId>process-exec-maven-plugin</artifactId>
-                        <version>0.8</version>
-                        <executions>
-                            <execution>
-                                <id>start-jar-process</id>
-                                <phase>pre-integration-test</phase>
-                                <goals>
-                                    <goal>start</goal>
-                                </goals>
-                                <configuration>
-                                    <name>dynamodb_local</name>
-                                    <waitAfterLaunch>1</waitAfterLaunch>
-                                    <arguments>
-                                        <argument>java</argument>
-                                        <argument>-Djava.library.path=dynamodb/DynamoDBLocal_lib</argument>
-                                        <argument>-jar</argument>
-                                        <argument>dynamodb/DynamoDBLocal.jar</argument>
-                                        <argument>-inMemory</argument>
-                                        <argument>-port</argument>
-                                        <argument>${dynamodb-local.port}</argument>
-                                        <argument>-sharedDb</argument>
-                                    </arguments>
-                                </configuration>
-                            </execution>
-                            <!--Stop Process-->
-                            <execution>
-                                <id>stop-jar-process</id>
-                                <phase>post-integration-test</phase>
-                                <goals><goal>stop-all</goal></goals>
-                            </execution>
-                        </executions>
-                    </plugin>
+
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-failsafe-plugin</artifactId>
@@ -517,7 +469,6 @@
                                     <goal>verify</goal>
                                 </goals>
                                 <configuration>
-                                    <argLine>${failsafeArgLine}</argLine>
                                     <includes>
                                         <include>*/BasicLockClientTests.java</include>
                                         <include>*/GetAllLocksTests.java</include>
@@ -527,6 +478,46 @@
                                         <dynamodb-local.endpoint>${dynamodb-local.endpoint}</dynamodb-local.endpoint>
                                     </systemPropertyVariables>
                                 </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>io.fabric8</groupId>
+                        <artifactId>docker-maven-plugin</artifactId>
+                        <version>${docker.maven.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>prepare-it-database</id>
+                                <phase>pre-integration-test</phase>
+                                <goals>
+                                    <goal>start</goal>
+                                </goals>
+                                <configuration>
+                                    <images>
+                                        <image>
+                                            <name>amazon/dynamodb-local:${dynamodblocal.version}</name>
+                                            <alias>it-database</alias>
+                                            <run>
+                                                <ports>
+                                                    <port>${dynamodb-local.port}:${dynamodb-local.port}</port>
+                                                </ports>
+                                                <wait>
+                                                    <http>
+                                                        <url>${dynamodb-local.endpoint}/shell/</url>
+                                                    </http>
+                                                    <time>5000</time>
+                                                </wait>
+                                            </run>
+                                        </image>
+                                    </images>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>remove-it-database</id>
+                                <phase>post-integration-test</phase>
+                                <goals>
+                                    <goal>stop</goal>
+                                </goals>
                             </execution>
                         </executions>
                     </plugin>
