@@ -17,8 +17,6 @@ package com.amazonaws.services.dynamodbv2;
 import java.nio.ByteBuffer;
 import java.util.Optional;
 
-import com.amazonaws.metrics.RequestMetricCollector;
-
 /**
  * Provides options for releasing a lock when calling the releaseLock() method.
  * This class contains the options that may be configured during the act of releasing a lock.
@@ -30,15 +28,12 @@ public class ReleaseLockOptions {
     private final boolean deleteLock;
     private final boolean bestEffort;
     private final Optional<ByteBuffer> data;
-    private final Optional<RequestMetricCollector> requestMetricCollector;
 
-    ReleaseLockOptions(final LockItem lockItem, final boolean deleteLock, final boolean bestEffort, final Optional<ByteBuffer> data,
-        final Optional<RequestMetricCollector> requestMetricCollector) {
+    ReleaseLockOptions(final LockItem lockItem, final boolean deleteLock, final boolean bestEffort, final Optional<ByteBuffer> data) {
         this.lockItem = lockItem;
         this.deleteLock = deleteLock;
         this.bestEffort = bestEffort;
         this.data = data;
-        this.requestMetricCollector = requestMetricCollector;
     }
 
     public static class ReleaseLockOptionsBuilder {
@@ -46,14 +41,12 @@ public class ReleaseLockOptions {
         private boolean deleteLock;
         private boolean bestEffort;
         private Optional<ByteBuffer> data;
-        private Optional<RequestMetricCollector> requestMetricCollector;
 
         ReleaseLockOptionsBuilder(final LockItem lockItem) {
             this.lockItem = lockItem;
             this.deleteLock = true;
             this.bestEffort = false;
             this.data = Optional.empty();
-            this.requestMetricCollector = Optional.empty();
         }
 
         /**
@@ -97,24 +90,14 @@ public class ReleaseLockOptions {
             return this;
         }
 
-        /**
-         * @param requestMetricCollector The request level metric collector to use, takes precedence over the ones at the
-         *                               http client level and AWS SDK level.
-         * @return a reference to this builder for fluent method chaining
-         */
-        public ReleaseLockOptionsBuilder withRequestMetricCollector(final RequestMetricCollector requestMetricCollector) {
-            this.requestMetricCollector = Optional.ofNullable(requestMetricCollector);
-            return this;
-        }
-
         public ReleaseLockOptions build() {
-            return new ReleaseLockOptions(this.lockItem, this.deleteLock, this.bestEffort, this.data, this.requestMetricCollector);
+            return new ReleaseLockOptions(this.lockItem, this.deleteLock, this.bestEffort, this.data);
         }
 
         @Override
         public java.lang.String toString() {
             return "ReleaseLockOptions.ReleaseLockOptionsBuilder(lockItem=" + this.lockItem + ", deleteLock=" + this.deleteLock + ", bestEffort=" + this.bestEffort + ", data="
-                + this.data + ", requestMetricCollector=" + this.requestMetricCollector + ")";
+                + this.data + ")";
         }
     }
 
@@ -145,9 +128,5 @@ public class ReleaseLockOptions {
 
     Optional<ByteBuffer> getData() {
         return this.data;
-    }
-
-    Optional<RequestMetricCollector> getRequestMetricCollector() {
-        return this.requestMetricCollector;
     }
 }

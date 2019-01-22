@@ -14,6 +14,8 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+
 import java.net.Inet4Address;
 import java.net.UnknownHostException;
 import java.util.Objects;
@@ -37,7 +39,7 @@ public class AmazonDynamoDBLockClientOptions {
     protected static final Boolean DEFAULT_CREATE_HEARTBEAT_BACKGROUND_THREAD = true;
     protected static final Boolean DEFAULT_HOLD_LOCK_ON_SERVICE_UNAVAILABLE = false;
 
-    private final AmazonDynamoDB dynamoDBClient;
+    private final DynamoDbClient dynamoDBClient;
     private final String tableName;
     private final String partitionKeyName;
     private final Optional<String> sortKeyName;
@@ -55,7 +57,7 @@ public class AmazonDynamoDBLockClientOptions {
      * "key," a lease duration of 20 seconds, and a default heartbeat period of 5 seconds. These defaults can be overriden.
      */
     public static class AmazonDynamoDBLockClientOptionsBuilder {
-        private AmazonDynamoDB dynamoDBClient;
+        private DynamoDbClient dynamoDBClient;
         private String tableName;
         private String partitionKeyName;
         private Optional<String> sortKeyName;
@@ -67,7 +69,7 @@ public class AmazonDynamoDBLockClientOptions {
         private Boolean holdLockOnServiceUnavailable;
         private Function<String, ThreadFactory> namedThreadCreator;
 
-        AmazonDynamoDBLockClientOptionsBuilder(final AmazonDynamoDB dynamoDBClient, final String tableName) {
+        AmazonDynamoDBLockClientOptionsBuilder(final DynamoDbClient dynamoDBClient, final String tableName) {
             this(dynamoDBClient, tableName,
                     /* By default, tries to set ownerName to the localhost */
                 generateOwnerNameFromLocalhost(),
@@ -86,7 +88,7 @@ public class AmazonDynamoDBLockClientOptions {
             return (String threadName) -> (Runnable runnable) -> new Thread(runnable, threadName);
         }
 
-        AmazonDynamoDBLockClientOptionsBuilder(final AmazonDynamoDB dynamoDBClient, final String tableName, final String ownerName,
+        AmazonDynamoDBLockClientOptionsBuilder(final DynamoDbClient dynamoDBClient, final String tableName, final String ownerName,
             final Function<String, ThreadFactory> namedThreadCreator) {
             this.dynamoDBClient = dynamoDBClient;
             this.tableName = tableName;
@@ -101,7 +103,7 @@ public class AmazonDynamoDBLockClientOptions {
             this.holdLockOnServiceUnavailable = DEFAULT_HOLD_LOCK_ON_SERVICE_UNAVAILABLE;
         }
 
-        AmazonDynamoDBLockClientOptionsBuilder(final AmazonDynamoDB dynamoDBClient, final String tableName, final String ownerName) {
+        AmazonDynamoDBLockClientOptionsBuilder(final DynamoDbClient dynamoDBClient, final String tableName, final String ownerName) {
             this(dynamoDBClient, tableName, ownerName, namedThreadCreator());
         }
 
@@ -227,11 +229,11 @@ public class AmazonDynamoDBLockClientOptions {
      * @param tableName      The table containing the lock client.
      * @return A builder which can be used for creating a lock client.
      */
-    public static AmazonDynamoDBLockClientOptionsBuilder builder(final AmazonDynamoDB dynamoDBClient, final String tableName) {
+    public static AmazonDynamoDBLockClientOptionsBuilder builder(final DynamoDbClient dynamoDBClient, final String tableName) {
         return new AmazonDynamoDBLockClientOptionsBuilder(dynamoDBClient, tableName);
     }
 
-    private AmazonDynamoDBLockClientOptions(final AmazonDynamoDB dynamoDBClient, final String tableName, final String partitionKeyName, final Optional<String> sortKeyName,
+    private AmazonDynamoDBLockClientOptions(final DynamoDbClient dynamoDBClient, final String tableName, final String partitionKeyName, final Optional<String> sortKeyName,
         final String ownerName, final Long leaseDuration, final Long heartbeatPeriod, final TimeUnit timeUnit, final Boolean createHeartbeatBackgroundThread,
         final Function<String, ThreadFactory> namedThreadCreator, final Boolean holdLockOnServiceUnavailable) {
         this.dynamoDBClient = dynamoDBClient;
@@ -250,7 +252,7 @@ public class AmazonDynamoDBLockClientOptions {
     /**
      * @return DynamoDB client that the lock client will use.
      */
-    AmazonDynamoDB getDynamoDBClient() {
+    DynamoDbClient getDynamoDBClient() {
         return this.dynamoDBClient;
     }
 

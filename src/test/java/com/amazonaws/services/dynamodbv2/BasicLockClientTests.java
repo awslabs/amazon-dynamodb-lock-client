@@ -1,5 +1,5 @@
 /**
- * Copyright 2013-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2013-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * <p>
  * Licensed under the Amazon Software License (the "License").
  * You may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package com.amazonaws.services.dynamodbv2;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -26,20 +27,22 @@ import java.util.regex.Pattern;
 
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.metrics.RequestMetricCollector;
-import com.amazonaws.services.dynamodbv2.model.AttributeValue;
-import com.amazonaws.services.dynamodbv2.model.DeleteItemRequest;
-import com.amazonaws.services.dynamodbv2.model.GetItemRequest;
-import com.amazonaws.services.dynamodbv2.model.GetItemResult;
 import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
 import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
-import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
-import com.amazonaws.services.dynamodbv2.model.PutItemResult;
 import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
 import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
+import org.powermock.api.mockito.PowerMockito;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.PutItemResponse;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -48,7 +51,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,7 +59,7 @@ import static org.mockito.Mockito.when;
  * Integration tests for the AmazonDynamoDBLockClient. These unit tests use a local version of DynamoDB.
  *
  * @author <a href="mailto:slutsker@amazon.com">Sasha Slutsker</a>
- * @author <a href="mailto:amcp@amazon.co.jp">Alexander Patrikalakis</a>
+ * @author <a href="mailto:amcp@amazon.com">Alexander Patrikalakis</a>
  */
 public class BasicLockClientTests extends InMemoryLockClientTester {
 
@@ -197,7 +199,9 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     @Test
     public void testAcquireLockLeaveData() throws IOException, LockNotGrantedException, InterruptedException {
         final String data = "testAcquireLockLeaveData";
-        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(data.getBytes()))
+                .build());
         assertEquals(item.getPartitionKey(), "testKey1");
 
         this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
@@ -206,14 +210,16 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE);
 
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
     @Test
     public void testAcquireLockLeaveData_rvnChanged() throws IOException, LockNotGrantedException, InterruptedException {
         final String data = "testAcquireLockLeaveData";
-        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(data.getBytes()))
+                .build());
         assertEquals(item.getPartitionKey(), "testKey1");
 
         this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
@@ -227,7 +233,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         try {
             item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE);
-            assertEquals(data, new String(item.getData().get().array()));
+            assertEquals(data, byteBufferToString(item.getData().get()));
             item.close();
         } catch (LockNotGrantedException e) {
             fail("Lock should not fail to acquire due to incorrect RVN - consistent data not enabled");
@@ -249,7 +255,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_SORT_1);
 
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
@@ -273,7 +279,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         try {
             item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_SORT_1);
-            assertEquals(data, new String(item.getData().get().array()));
+            assertEquals(data, byteBufferToString(item.getData().get()));
             item.close();
         } catch (LockNotGrantedException e) {
             fail("Lock should not fail to acquire due to incorrect RVN - consistent data not enabled");
@@ -293,7 +299,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_CONSISTENT_DATA_TRUE);
 
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
@@ -337,7 +343,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_CONSISTENT_DATA_TRUE_SORT_1);
 
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
@@ -382,7 +388,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE);
 
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
@@ -406,7 +412,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         try {
             item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE);
-            assertEquals(data, new String(item.getData().get().array()));
+            assertEquals(data, byteBufferToString(item.getData().get()));
             item.close();
         } catch (LockNotGrantedException e) {
             fail("Lock should not fail to acquire due to incorrect RVN - consistent data not enabled");
@@ -432,7 +438,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_SORT_1);
 
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
@@ -459,7 +465,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         try {
             item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_SORT_1);
-            assertEquals(data, new String(item.getData().get().array()));
+            assertEquals(data, byteBufferToString(item.getData().get()));
             item.close();
         } catch (LockNotGrantedException e) {
             fail("Lock should not fail to acquire due to incorrect RVN - consistent data not enabled");
@@ -482,7 +488,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_CONSISTENT_DATA_TRUE);
 
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
@@ -528,7 +534,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE_UPDATE_EXISTING_TRUE_CONSISTENT_DATA_TRUE_SORT_1);
 
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
@@ -632,8 +638,8 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testAcquireLockMustExistWhenUpdateExistingLockWithSortKey_LockDoesNotExist() throws IOException, LockNotGrantedException,
-            InterruptedException {
+    public void testAcquireLockMustExistWhenUpdateExistingLockWithSortKey_LockDoesNotExist()
+            throws LockNotGrantedException, InterruptedException {
 
         try {
             this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_SORT_1);
@@ -644,8 +650,8 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentDataWithSortKey_LockDoesNotExist() throws IOException,
-            LockNotGrantedException, InterruptedException {
+    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentDataWithSortKey_LockDoesNotExist()
+            throws LockNotGrantedException, InterruptedException {
 
         try {
             this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_CONSISTENT_DATA_TRUE_SORT_1);
@@ -656,7 +662,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testAcquireLockMustExistWhenNotUpdateExistingLock_LockExists() throws IOException, LockNotGrantedException,
+    public void testAcquireLockMustExistWhenNotUpdateExistingLock_LockExists() throws LockNotGrantedException,
             InterruptedException {
 
         final String data = "testAcquireLockMustExist";
@@ -668,12 +674,12 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get().isReleased());
 
         item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE);
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
     @Test
-    public void testAcquireLockMustExistWhenNotUpdateExistingLockConsistentData_LockExists() throws IOException, LockNotGrantedException,
+    public void testAcquireLockMustExistWhenNotUpdateExistingLockConsistentData_LockExists() throws LockNotGrantedException,
             InterruptedException {
 
         final String data = "testAcquireLockMustExist";
@@ -685,12 +691,12 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get().isReleased());
 
         item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE_CONSISTENT_DATA_TRUE);
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
     @Test
-    public void testAcquireLockMustExistWhenNotUpdateExistingLockWithSortKey_LockExists() throws IOException, LockNotGrantedException,
+    public void testAcquireLockMustExistWhenNotUpdateExistingLockWithSortKey_LockExists() throws LockNotGrantedException,
             InterruptedException {
 
         final String data = "testAcquireLockMustExist";
@@ -703,13 +709,13 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get().isReleased());
 
         item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE_SORT_1);
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
     @Test
-    public void testAcquireLockMustExistWhenNotUpdateExistingLockConsistentDataWithSortKey_LockExists() throws IOException,
-            LockNotGrantedException, InterruptedException {
+    public void testAcquireLockMustExistWhenNotUpdateExistingLockConsistentDataWithSortKey_LockExists()
+            throws LockNotGrantedException, InterruptedException {
 
         final String data = "testAcquireLockMustExist";
         LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData(ByteBuffer.wrap(data.getBytes())).build());
@@ -721,12 +727,13 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get().isReleased());
 
         item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_FALSE_CONSISTENT_DATA_TRUE_SORT_1);
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
     @Test
-    public void testAcquireLockMustExistWhenUpdateExistingLock_LockExist() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testAcquireLockMustExistWhenUpdateExistingLock_LockExist()
+            throws LockNotGrantedException, InterruptedException {
         final String data = "testAcquireLockMustExist";
         LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
         assertEquals(item.getPartitionKey(), "testKey1");
@@ -736,12 +743,13 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get().isReleased());
 
         item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE);
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
     @Test
-    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentData_LockExist() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentData_LockExist()
+            throws LockNotGrantedException, InterruptedException {
         final String data = "testAcquireLockMustExist";
         LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).build());
         assertEquals(item.getPartitionKey(), "testKey1");
@@ -751,13 +759,13 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertTrue(this.lockClient.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").build()).get().isReleased());
 
         item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_CONSISTENT_DATA_TRUE);
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
     @Test
-    public void testAcquireLockMustExistWhenUpdateExistingLockWithSortKey_LockExist() throws IOException, LockNotGrantedException,
-            InterruptedException {
+    public void testAcquireLockMustExistWhenUpdateExistingLockWithSortKey_LockExist()
+            throws LockNotGrantedException, InterruptedException {
         final String data = "testAcquireLockMustExist";
         LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData(ByteBuffer.wrap(data.getBytes())).build());
         assertEquals(item.getPartitionKey(), "testKey1");
@@ -768,12 +776,13 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get().isReleased());
 
         item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_SORT_1);
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
     @Test
-    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentDataWithSortKey_LockExist() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testAcquireLockMustExistWhenUpdateExistingLockConsistentDataWithSortKey_LockExist()
+            throws LockNotGrantedException, InterruptedException {
         final String data = "testAcquireLockMustExist";
         LockItem item = this.lockClientForRangeKeyTable.acquireLock(AcquireLockOptions.builder("testKey1").withSortKey("1").withData(ByteBuffer.wrap(data.getBytes())).build());
         assertEquals(item.getPartitionKey(), "testKey1");
@@ -784,7 +793,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertTrue(this.lockClientForRangeKeyTable.getLockFromDynamoDB(new GetLockOptions.GetLockOptionsBuilder("testKey1").withSortKey("1").build()).get().isReleased());
 
         item = this.lockClientForRangeKeyTable.acquireLock(ACQUIRE_LOCK_OPTIONS_ONLY_IF_LOCK_EXIST_UPDATE_TRUE_CONSISTENT_DATA_TRUE_SORT_1);
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
         item.close();
     }
 
@@ -806,29 +815,28 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         final String lockPartitionKey = "testKey1";
         final String lockSortKey = "1";
         final Map<String, AttributeValue> additional = new HashMap<>();
-        additional.put(additionalValue, new AttributeValue().withS(additionalValue));
+        additional.put(additionalValue, AttributeValue.builder().s(additionalValue).build());
         //acquire first lock
-        final RequestMetricCollector requestMetricCollector = Mockito.mock(RequestMetricCollector.class);
         final Optional<LockItem> lockItem1 = lockClient1.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey(lockSortKey).withDeleteLockOnRelease(false).withAdditionalAttributes(additional).build());
 
         assertNotEquals(Optional.empty(), lockItem1);
         lockClient1.releaseLock(lockItem1.get());
         //acquire the same lock released above
-        final Optional<LockItem> lockItem2 = lockClient2.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey(lockSortKey).withRequestMetricCollector(requestMetricCollector).withUpdateExistingLockRecord(true).build());
+        final Optional<LockItem> lockItem2 = lockClient2.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey(lockSortKey).withUpdateExistingLockRecord(true).build());
 
         assertTrue(lockItem2.isPresent());
         assertEquals(INTEGRATION_TESTER_2, lockItem2.get().getOwnerName());
 
         /* Get the complete record for the lock to verify other fields are not replaced*/
         Map<String, AttributeValue> key = new HashMap<>();
-        key.put(lockClient1Options.getPartitionKeyName(), new AttributeValue().withS(lockPartitionKey));
-        key.put("rangeKey", new AttributeValue().withS(lockSortKey));
-        GetItemResult result = lockClient1Options.getDynamoDBClient().getItem(new GetItemRequest().withTableName(RANGE_KEY_TABLE_NAME).withKey(key));
-        Map<String, AttributeValue> currentLockRecord = result.getItem();
+        key.put(lockClient1Options.getPartitionKeyName(), AttributeValue.builder().s(lockPartitionKey).build());
+        key.put("rangeKey", AttributeValue.builder().s(lockSortKey).build());
+        GetItemResponse result = lockClient1Options.getDynamoDBClient().getItem(GetItemRequest.builder().tableName(RANGE_KEY_TABLE_NAME).key(key).build());
+        Map<String, AttributeValue> currentLockRecord = result.item();
 
         //any values left from old locks should not be removed
         assertNotNull(currentLockRecord.get(additionalValue));
-        String additionalValuesExpected = currentLockRecord.get(additionalValue).getS();
+        String additionalValuesExpected = currentLockRecord.get(additionalValue).s();
         assertEquals(additionalValue, additionalValuesExpected);
 
         lockClient1.close();
@@ -836,36 +844,54 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testAcquireLockWithSortKeyWhenLockIsExpiredAndUpdateExistingLockIsTruePreserveAdditionalAttributesFromPreviousLock() throws InterruptedException, IOException {
+    public void testAcquireLockWithSortKeyWhenLockIsExpiredAndUpdateExistingLockIsTruePreserveAdditionalAttributesFromPreviousLock()
+            throws InterruptedException, IOException {
         final AmazonDynamoDBLockClient lockClient1 = new AmazonDynamoDBLockClient(
-                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
-                .withTimeUnit(TimeUnit.SECONDS).withSortKeyName("rangeKey").withCreateHeartbeatBackgroundThread(false).build());
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME, INTEGRATION_TESTER_2)
+                        .withLeaseDuration(3L)
+                        .withHeartbeatPeriod(1L)
+                        .withTimeUnit(TimeUnit.SECONDS)
+                        .withSortKeyName("rangeKey")
+                        .withCreateHeartbeatBackgroundThread(false)
+                        .build());
         final AmazonDynamoDBLockClient lockClient2 = new AmazonDynamoDBLockClient(
-                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
-                        .withTimeUnit(TimeUnit.SECONDS).withSortKeyName("rangeKey").withCreateHeartbeatBackgroundThread(false).build());
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME, INTEGRATION_TESTER_2)
+                        .withLeaseDuration(3L)
+                        .withHeartbeatPeriod(1L)
+                        .withTimeUnit(TimeUnit.SECONDS)
+                        .withSortKeyName("rangeKey")
+                        .withCreateHeartbeatBackgroundThread(false)
+                        .build());
         //add additional values to verify they are preserved always
         final String additionalValue = "doNotDelete";
         final String lockPartitionKey = "testKey1";
         final String lockSortKey = "1";
         Map<String, AttributeValue> additional = new HashMap<>();
-        additional.put(additionalValue, new AttributeValue().withS(additionalValue));
+        additional.put(additionalValue, AttributeValue.builder().s(additionalValue).build());
 
-        final Optional<LockItem> lockItem1 = lockClient1.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey(lockSortKey).withDeleteLockOnRelease(false).withAdditionalAttributes(additional).build());
+        final Optional<LockItem> lockItem1 = lockClient1.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey)
+                .withSortKey(lockSortKey)
+                .withDeleteLockOnRelease(false)
+                .withAdditionalAttributes(additional)
+                .build());
         assertNotEquals(Optional.empty(), lockItem1);
 
-        final Optional<LockItem> lockItem2 = lockClient2.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withSortKey(lockSortKey).withUpdateExistingLockRecord(true).build());
+        final Optional<LockItem> lockItem2 = lockClient2.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey)
+                .withSortKey(lockSortKey)
+                .withUpdateExistingLockRecord(true)
+                .build());
         assertTrue(lockItem2.isPresent());
         assertEquals(INTEGRATION_TESTER_2, lockItem2.get().getOwnerName());
 
         /* Get the complete record for the lock to verify other fields are not replaced*/
         Map<String, AttributeValue> key = new HashMap<>();
-        key.put(lockClient1Options.getPartitionKeyName(), new AttributeValue().withS(lockPartitionKey));
-        key.put("rangeKey", new AttributeValue().withS(lockSortKey));
-        GetItemResult result = this.dynamoDBMock.getItem(new GetItemRequest().withTableName(RANGE_KEY_TABLE_NAME).withKey(key));
-        Map<String, AttributeValue> currentLockRecord = result.getItem();
+        key.put(lockClient1Options.getPartitionKeyName(), AttributeValue.builder().s(lockPartitionKey).build());
+        key.put("rangeKey", AttributeValue.builder().s(lockSortKey).build());
+        GetItemResponse result = this.dynamoDBMock.getItem(GetItemRequest.builder().tableName(RANGE_KEY_TABLE_NAME).key(key).build());
+        Map<String, AttributeValue> currentLockRecord = result.item();
         //any values left from old locks should not be removed
         assertNotNull(currentLockRecord.get(additionalValue));
-        String additionalValuesExpected = currentLockRecord.get(additionalValue).getS();
+        String additionalValuesExpected = currentLockRecord.get(additionalValue).s();
         assertEquals(additionalValue, additionalValuesExpected);
 
         lockClient1.close();
@@ -873,36 +899,41 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testAcquireLockWhenLockIsExpiredAndUpdateExistingLockIsTruePreserveAdditionalAttributesFromPreviousLock() throws InterruptedException, IOException {
+    public void testAcquireLockWhenLockIsExpiredAndUpdateExistingLockIsTruePreserveAdditionalAttributesFromPreviousLock()
+            throws InterruptedException, IOException {
         final AmazonDynamoDBLockClient lockClient1 = new AmazonDynamoDBLockClient(
-                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME,
+                        INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
                         .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).build());
         final AmazonDynamoDBLockClient lockClient2 = new AmazonDynamoDBLockClient(
-                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+                new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME,
+                        INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
                         .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).build());
         //add additional values to verify they are preserved always
         final String additionalValue = "doNotDelete";
         final String lockPartitionKey = "testKey1";
         Map<String, AttributeValue> additional = new HashMap<>();
-        additional.put(additionalValue, new AttributeValue().withS(additionalValue));
+        additional.put(additionalValue, AttributeValue.builder().s(additionalValue).build());
 
-        final Optional<LockItem> lockItem1 = lockClient1.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withDeleteLockOnRelease(false).withAdditionalAttributes(additional).build());
+        final Optional<LockItem> lockItem1 = lockClient1.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey)
+                .withDeleteLockOnRelease(false).withAdditionalAttributes(additional).build());
         assertNotEquals(Optional.empty(), lockItem1);
 
         /* try stealing the lock once it is expired */
-        final Optional<LockItem> lockItem2 = lockClient2.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey).withUpdateExistingLockRecord(true).build());
+        final Optional<LockItem> lockItem2 = lockClient2.tryAcquireLock(AcquireLockOptions.builder(lockPartitionKey)
+                .withUpdateExistingLockRecord(true).build());
         assertTrue(lockItem2.isPresent());
         assertEquals(INTEGRATION_TESTER_2, lockItem2.get().getOwnerName());
 
         /* Get the complete record for the lock to verify other fields are not replaced*/
         Map<String, AttributeValue> key = new HashMap<>();
-        key.put(lockClient1Options.getPartitionKeyName(), new AttributeValue().withS(lockPartitionKey));
+        key.put(lockClient1Options.getPartitionKeyName(), AttributeValue.builder().s(lockPartitionKey).build());
 
-        GetItemResult result = this.dynamoDBMock.getItem(new GetItemRequest().withTableName(TABLE_NAME).withKey(key));
-        Map<String, AttributeValue> currentLockRecord = result.getItem();
+        GetItemResponse result = this.dynamoDBMock.getItem(GetItemRequest.builder().tableName(TABLE_NAME).key(key).build());
+        Map<String, AttributeValue> currentLockRecord = result.item();
         //any values left from old locks should not be removed
         assertNotNull(currentLockRecord.get(additionalValue));
-        String additionalValuesExpected = currentLockRecord.get(additionalValue).getS();
+        String additionalValuesExpected = currentLockRecord.get(additionalValue).s();
         assertEquals(additionalValue, additionalValuesExpected);
 
         lockClient1.close();
@@ -915,8 +946,9 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         final String data = "testAcquireLockLeaveData";
 
         final AcquireLockOptions options =
-            AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).withRefreshPeriod(1L).withAdditionalTimeToWaitForLock(5L)
-                .withTimeUnit(TimeUnit.SECONDS).withDeleteLockOnRelease(false).build();
+            AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes()))
+                    .withRefreshPeriod(1L).withAdditionalTimeToWaitForLock(5L).withTimeUnit(TimeUnit.SECONDS)
+                    .withDeleteLockOnRelease(false).build();
 
         LockItem item = this.lockClient.acquireLock(options);
         assertEquals(item.getPartitionKey(), "testKey1");
@@ -925,7 +957,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         this.lockClient = new AmazonDynamoDBLockClient(this.lockClient1Options);
 
         item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_REPLACE_DATA_FALSE);
-        assertEquals(data, new String(item.getData().get().array()));
+        assertEquals(data, byteBufferToString(item.getData().get()));
 
         item.close();
     }
@@ -938,19 +970,21 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build());
 
         final String data = "testAcquireLockLeaveOrReplaceDataFromReleased";
-        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withReplaceData(false).withData(ByteBuffer.wrap(data.getBytes())).build());
+        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withReplaceData(false)
+                .withData(ByteBuffer.wrap(data.getBytes())).build());
 
         assertEquals(data, new String(item.getData().get().array()));
         item.close();
     }
 
     @Test
-    public void testAcquireLockLeaveOrReplaceDataFromAcquiredLock() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testAcquireLockLeaveOrReplaceDataFromAcquiredLock() throws LockNotGrantedException, InterruptedException {
 
         LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").build());
 
         final String data = "testAcquireLockLeaveOrReplaceData";
-        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withReplaceData(false).withData(ByteBuffer.wrap(data.getBytes())).build());
+        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withReplaceData(false)
+                .withData(ByteBuffer.wrap(data.getBytes())).build());
 
         assertEquals(data, new String(item.getData().get().array()));
         item.close();
@@ -962,10 +996,13 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         final String data = new String("testSendHeartbeatLeaveData" + SECURE_RANDOM.nextDouble());
 
         final AmazonDynamoDBLockClient lockClient = new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME).withOwnerName(INTEGRATION_TESTER_2).withHeartbeatPeriod(2L).withLeaseDuration(30L)
-                .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).withSortKeyName("rangeKey").build());
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME)
+                    .withOwnerName(INTEGRATION_TESTER_2).withHeartbeatPeriod(2L).withLeaseDuration(30L)
+                    .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false)
+                    .withSortKeyName("rangeKey").build());
         final LockItem item = lockClient.acquireLock(
-            AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).withDeleteLockOnRelease(true).withReplaceData(true).withSortKey(TABLE_NAME).build());
+            AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes()))
+                    .withDeleteLockOnRelease(true).withReplaceData(true).withSortKey(TABLE_NAME).build());
         assertEquals(data, new String(item.getData().get().array()));
 
         assertEquals(Optional.empty(), lockClient.getLock("testKey1", Optional.of("nothing")));
@@ -983,7 +1020,8 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         final String data = new String("testSendHeartbeatLeaveData" + SECURE_RANDOM.nextDouble());
 
         final LockItem item = this.lockClient
-            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).withDeleteLockOnRelease(true).withReplaceData(true).build());
+            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes()))
+                    .withDeleteLockOnRelease(true).withReplaceData(true).build());
         assertEquals(data, new String(item.getData().get().array()));
 
         assertEquals(data, new String(this.lockClient.getLock("testKey1", Optional.empty()).get().getData().get().array()));
@@ -1000,25 +1038,29 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         final String data2 = new String("testSendHeartbeatChangeData2" + SECURE_RANDOM.nextDouble());
 
         final LockItem item = this.lockClient
-            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data1.getBytes())).withDeleteLockOnRelease(true).withReplaceData(true).build());
+            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data1.getBytes()))
+                    .withDeleteLockOnRelease(true).withReplaceData(true).build());
         assertEquals(data1, new String(item.getData().get().array()));
 
-        assertEquals(data1, new String(this.lockClient.getLockFromDynamoDB(GetLockOptions.builder("testKey1").build()).get().getData().get().array()));
+        assertEquals(data1, byteBufferToString(this.lockClient.getLockFromDynamoDB(
+                GetLockOptions.builder("testKey1").build()).get().getData().get()));
         this.lockClient.sendHeartbeat(SendHeartbeatOptions.builder(item).withData(ByteBuffer.wrap(data2.getBytes())).build());
-        assertEquals(data2, new String(this.lockClient.getLockFromDynamoDB(GetLockOptions.builder("testKey1").build()).get().getData().get().array()));
+        assertEquals(data2, byteBufferToString(this.lockClient.getLockFromDynamoDB(
+                GetLockOptions.builder("testKey1").build()).get().getData().get()));
 
         item.close();
     }
 
     @Test
-    public void testSendHeartbeatRemoveData() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testSendHeartbeatRemoveData() throws LockNotGrantedException, InterruptedException {
 
-        final String data = new String("testSendHeartbeatLeaveData" + SECURE_RANDOM.nextDouble());
+        final String data = "testSendHeartbeatLeaveData" + SECURE_RANDOM.nextDouble();
         final LockItem item = this.lockClient
-            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).withDeleteLockOnRelease(true).withReplaceData(true).build());
-        assertEquals(data, new String(item.getData().get().array()));
+            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes()))
+                    .withDeleteLockOnRelease(true).withReplaceData(true).build());
+        assertEquals(data, byteBufferToString(item.getData().get()));
 
-        assertEquals(data, new String(this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DELETE_ON_RELEASE).get().getData().get().array()));
+        assertEquals(data, byteBufferToString(this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DELETE_ON_RELEASE).get().getData().get()));
         this.lockClient.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(true).build());
         assertEquals(Optional.empty(), this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DELETE_ON_RELEASE).get().getData());
 
@@ -1026,53 +1068,60 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testReleaseLockLeaveItem() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testReleaseLockLeaveItem() throws LockNotGrantedException, InterruptedException {
 
         final String data = "testReleaseLockLeaveItem";
         LockItem item = this.lockClient
-            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).withDeleteLockOnRelease(false).withReplaceData(true).build());
+            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes()))
+                    .withDeleteLockOnRelease(false).withReplaceData(true).build());
         assertEquals(data, new String(item.getData().get().array()));
 
         item.close();
         assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
         assertTrue(this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DO_NOT_DELETE_ON_RELEASE).get().isReleased());
-        assertEquals(data, new String(this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DO_NOT_DELETE_ON_RELEASE).get().getData().get().array()));
+        assertEquals(data, byteBufferToString(this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DO_NOT_DELETE_ON_RELEASE).get().getData().get()));
 
-        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withDeleteLockOnRelease(false).withReplaceData(false).build());
-        assertEquals(data, new String(item.getData().get().array()));
+        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withDeleteLockOnRelease(false).withReplaceData(false).build());
+        assertEquals(data, byteBufferToString(item.getData().get()));
 
         item.close();
     }
 
     @Test
-    public void testReleaseLockLeaveItemAndChangeData() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testReleaseLockLeaveItemAndChangeData() throws LockNotGrantedException, InterruptedException {
 
         final String data = "testReleaseLockLeaveItem";
         LockItem item = this.lockClient
-            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).withDeleteLockOnRelease(false).withReplaceData(true).build());
+            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes()))
+                    .withDeleteLockOnRelease(false).withReplaceData(true).build());
         assertEquals(data, new String(item.getData().get().array()));
 
-        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).withData(ByteBuffer.wrap("newData".getBytes())).build());
+        this.lockClient.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false)
+                .withData(ByteBuffer.wrap("newData".getBytes())).build());
 
         assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
         assertTrue(this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DO_NOT_DELETE_ON_RELEASE).get().isReleased());
-        assertEquals("newData", new String(this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DO_NOT_DELETE_ON_RELEASE).get().getData().get().array()));
+        assertEquals("newData", byteBufferToString(this.lockClient.getLockFromDynamoDB(
+                GET_LOCK_OPTIONS_DO_NOT_DELETE_ON_RELEASE).get().getData().get()));
 
-        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withDeleteLockOnRelease(false).withReplaceData(false).build());
-        assertEquals("newData", new String(item.getData().get().array()));
+        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withDeleteLockOnRelease(false).withReplaceData(false).build());
+        assertEquals("newData", byteBufferToString(item.getData().get()));
 
         item.close();
     }
 
     @Test
-    public void testReleaseLockRemoveItem() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testReleaseLockRemoveItem() throws LockNotGrantedException, InterruptedException {
         final String data = "testReleaseLockRemoveItem";
-        LockItem item = this.lockClient
-            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(data.getBytes())).withDeleteLockOnRelease(true).withReplaceData(true).build());
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(data.getBytes())).withDeleteLockOnRelease(true).withReplaceData(true).build());
         assertEquals(data, new String(item.getData().get().array()));
 
         item.close();
-        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withDeleteLockOnRelease(true).withReplaceData(false).build());
+        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withDeleteLockOnRelease(true).withReplaceData(false).build());
         assertEquals(Optional.empty(), item.getData());
 
         item.close();
@@ -1080,29 +1129,34 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
     @Test
     public void testReleaseLockBestEffort() throws IOException, LockNotGrantedException, InterruptedException {
+
         final AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(this.lockClient1Options);
 
         final LockItem item = client.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
-        Mockito.doThrow(new AmazonClientException("Client exception releasing lock")).when(dynamoDBMock).deleteItem(Mockito.any(DeleteItemRequest.class));
+        Mockito.doThrow(SdkClientException.builder().message("Client exception releasing lock").build())
+                .when(dynamoDBMock).deleteItem(Mockito.any(DeleteItemRequest.class));
 
         final ReleaseLockOptions options = ReleaseLockOptions.builder(item).withBestEffort(true).build();
         assertTrue(client.releaseLock(options));
         client.close();
     }
 
-    @Test(expected = AmazonClientException.class)
+    @Test(expected = SdkClientException.class)
     public void testReleaseLockNotBestEffort() throws IOException, LockNotGrantedException, InterruptedException {
-        final AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(AmazonDynamoDBLockClientOptions.builder(dynamoDBMock, TABLE_NAME).withOwnerName(LOCALHOST).build());
+
+        final AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(
+                AmazonDynamoDBLockClientOptions.builder(dynamoDBMock, TABLE_NAME).withOwnerName(LOCALHOST).build());
 
         final LockItem item = client.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
-        Mockito.doThrow(new AmazonClientException("Client exception releasing lock")).when(dynamoDBMock).deleteItem(Mockito.any(DeleteItemRequest.class));
+        Mockito.doThrow(SdkClientException.builder().message("Client exception releasing lock").build())
+                .when(dynamoDBMock).deleteItem(Mockito.any(DeleteItemRequest.class));
 
         client.releaseLock(item);
         client.close();
     }
 
     @Test
-    public void testAcquireLockAfterTimeout() throws IOException, InterruptedException {
+    public void testAcquireLockAfterTimeout() throws InterruptedException {
         final LockItem item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
         assertEquals(item.getPartitionKey(), "testKey1");
 
@@ -1110,7 +1164,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testSucceedToAcquireLockAfterTimeout() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testSucceedToAcquireLockAfterTimeout() throws LockNotGrantedException, InterruptedException {
         final LockItem item = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
         assertEquals(item.getPartitionKey(), "testKey1");
 
@@ -1131,9 +1185,12 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
     @Test(expected = IllegalArgumentException.class)
     public void testSetupTooSmallHearbeatCheck() throws IOException {
-        final AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME).withOwnerName(INTEGRATION_TESTER).withLeaseDuration(5L).withHeartbeatPeriod(4L).withTimeUnit(TimeUnit.SECONDS)
-                .withCreateHeartbeatBackgroundThread(true).build());
+        final AmazonDynamoDBLockClient client
+                = new AmazonDynamoDBLockClient(AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME)
+                    .withOwnerName(INTEGRATION_TESTER)
+                    .withLeaseDuration(5L).withHeartbeatPeriod(4L)
+                    .withTimeUnit(TimeUnit.SECONDS)
+                    .withCreateHeartbeatBackgroundThread(true).build());
         client.close();
     }
 
@@ -1141,8 +1198,12 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     public void testAcquiringSomeoneElsesLock() throws InterruptedException, IOException {
         final AmazonDynamoDBLockClient lockClient1 = new AmazonDynamoDBLockClient(this.lockClient1Options);
         final AmazonDynamoDBLockClient lockClient2 = new AmazonDynamoDBLockClient(
-            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2).withLeaseDuration(3L).withHeartbeatPeriod(1L)
-                .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).build());
+            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
+                    .withLeaseDuration(3L)
+                    .withHeartbeatPeriod(1L)
+                    .withTimeUnit(TimeUnit.SECONDS)
+                    .withCreateHeartbeatBackgroundThread(false)
+                    .build());
         final Optional<LockItem> lockItem1 = lockClient1.tryAcquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
         assertNotEquals(Optional.empty(), lockItem1);
 
@@ -1186,7 +1247,8 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertEquals(item.getPartitionKey(), "testKey1");
 
         final AmazonDynamoDBLockClient lockClient2 = new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME).withOwnerName(INTEGRATION_TESTER_2).withLeaseDuration(30L).withHeartbeatPeriod(2L).withTimeUnit(TimeUnit.SECONDS)
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME).withOwnerName(INTEGRATION_TESTER_2)
+                    .withLeaseDuration(30L).withHeartbeatPeriod(2L).withTimeUnit(TimeUnit.SECONDS)
                 .withCreateHeartbeatBackgroundThread(false).build());
         final Optional<LockItem> item2 = lockClient2.getLock("testKey1", Optional.empty());
         assertFalse(lockClient2.releaseLock(item2.get()));
@@ -1199,7 +1261,8 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertEquals(item.getPartitionKey(), "testKey1");
 
         final AmazonDynamoDBLockClient lockClient2 = new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME).withOwnerName(INTEGRATION_TESTER_2).withLeaseDuration(30L).withHeartbeatPeriod(2L).withTimeUnit(TimeUnit.SECONDS)
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME).withOwnerName(INTEGRATION_TESTER_2)
+                    .withLeaseDuration(30L).withHeartbeatPeriod(2L).withTimeUnit(TimeUnit.SECONDS)
                 .withCreateHeartbeatBackgroundThread(false).build());
         final Optional<LockItem> item2 = lockClient2.getLock("testKey1", Optional.empty());
         lockClient2.sendHeartbeat(item2.get());
@@ -1261,25 +1324,52 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     @Test
     public void testRangeKey() throws LockNotGrantedException, InterruptedException, IOException {
         final AmazonDynamoDBLockClient client1 = new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME).withOwnerName(INTEGRATION_TESTER_2).withLeaseDuration(5L).withHeartbeatPeriod(1L)
-                .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(true).withSortKeyName("rangeKey").build());
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME)
+                    .withOwnerName(INTEGRATION_TESTER_2)
+                    .withLeaseDuration(5L)
+                    .withHeartbeatPeriod(1L)
+                    .withTimeUnit(TimeUnit.SECONDS)
+                    .withCreateHeartbeatBackgroundThread(true)
+                    .withSortKeyName("rangeKey")
+                    .build());
         final AmazonDynamoDBLockClient client2 = new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME).withOwnerName(INTEGRATION_TESTER_3).withLeaseDuration(5L).withHeartbeatPeriod(1L)
-                .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(true).withSortKeyName("rangeKey").build());
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME)
+                    .withOwnerName(INTEGRATION_TESTER_3)
+                    .withLeaseDuration(5L)
+                    .withHeartbeatPeriod(1L)
+                    .withTimeUnit(TimeUnit.SECONDS)
+                    .withCreateHeartbeatBackgroundThread(true)
+                    .withSortKeyName("rangeKey")
+                    .build());
 
-        final LockItem item = client1.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).withSortKey("1").build());
+        final LockItem item = client1.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(TEST_DATA.getBytes()))
+                .withSortKey("1")
+                .build());
         assertEquals(item.getPartitionKey(), "testKey1");
 
         assertEquals(client1.getLock("testKey1", Optional.of("1")).get().getSortKey().get(), "1");
 
-        final Optional<LockItem> lock = client2.tryAcquireLock(
-            AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).withReplaceData(false).withDeleteLockOnRelease(false).withRefreshPeriod(0L)
-                .withAdditionalTimeToWaitForLock(0L).withTimeUnit(TimeUnit.MILLISECONDS).withSortKey("1").build());
+        final Optional<LockItem> lock = client2.tryAcquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(TEST_DATA.getBytes()))
+                .withReplaceData(false)
+                .withDeleteLockOnRelease(false)
+                .withRefreshPeriod(0L)
+                .withAdditionalTimeToWaitForLock(0L)
+                .withTimeUnit(TimeUnit.MILLISECONDS)
+                .withSortKey("1")
+                .build());
         assertEquals(Optional.empty(), lock);
         item.close();
-        assertNotEquals(Optional.empty(), client2.tryAcquireLock(
-            AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).withReplaceData(false).withDeleteLockOnRelease(false).withRefreshPeriod(0L)
-                .withAdditionalTimeToWaitForLock(0L).withTimeUnit(TimeUnit.MILLISECONDS).withSortKey("1").build()));
+        assertNotEquals(Optional.empty(), client2.tryAcquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(TEST_DATA.getBytes()))
+                .withReplaceData(false)
+                .withDeleteLockOnRelease(false)
+                .withRefreshPeriod(0L)
+                .withAdditionalTimeToWaitForLock(0L)
+                .withTimeUnit(TimeUnit.MILLISECONDS)
+                .withSortKey("1")
+                .build()));
         client1.close();
         client2.close();
     }
@@ -1287,19 +1377,40 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     @Test
     public void testRangeKeyAcquiredAfterTimeout() throws LockNotGrantedException, InterruptedException, IOException {
         final AmazonDynamoDBLockClient client1 = new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME).withOwnerName(INTEGRATION_TESTER_2).withLeaseDuration(5L).withHeartbeatPeriod(1L)
-                .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).withSortKeyName("rangeKey").build());
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME)
+                    .withOwnerName(INTEGRATION_TESTER_2)
+                    .withLeaseDuration(5L)
+                    .withHeartbeatPeriod(1L)
+                    .withTimeUnit(TimeUnit.SECONDS)
+                    .withCreateHeartbeatBackgroundThread(false)
+                    .withSortKeyName("rangeKey")
+                    .build());
         final AmazonDynamoDBLockClient client2 = new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME).withOwnerName(INTEGRATION_TESTER_3).withLeaseDuration(5L).withHeartbeatPeriod(1L)
-                .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).withSortKeyName("rangeKey").build());
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, RANGE_KEY_TABLE_NAME)
+                    .withOwnerName(INTEGRATION_TESTER_3)
+                    .withLeaseDuration(5L)
+                    .withHeartbeatPeriod(1L)
+                    .withTimeUnit(TimeUnit.SECONDS)
+                    .withCreateHeartbeatBackgroundThread(false)
+                    .withSortKeyName("rangeKey")
+                    .build());
 
-        final LockItem item = client1.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).withSortKey("1").build());
+        final LockItem item = client1.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(TEST_DATA.getBytes()))
+                .withSortKey("1")
+                .build());
         assertEquals(item.getPartitionKey(), "testKey1");
 
         assertEquals(client1.getLock("testKey1", Optional.of("1")).get().getSortKey().get(), "1");
-        assertNotEquals(Optional.empty(), client2.tryAcquireLock(
-            AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).withReplaceData(false).withDeleteLockOnRelease(false).withRefreshPeriod(3L)
-                .withAdditionalTimeToWaitForLock(1L).withTimeUnit(TimeUnit.SECONDS).withSortKey("1").build()));
+        assertNotEquals(Optional.empty(), client2.tryAcquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(TEST_DATA.getBytes()))
+                .withReplaceData(false)
+                .withDeleteLockOnRelease(false)
+                .withRefreshPeriod(3L)
+                .withAdditionalTimeToWaitForLock(1L)
+                .withTimeUnit(TimeUnit.SECONDS)
+                .withSortKey("1")
+                .build()));
 
         final LockItem item2 = client2.getLock("testKey1", Optional.of("1")).get();
         assertFalse("Expected lock to be valid", item2.isExpired());
@@ -1310,15 +1421,17 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     @Test
     public void testAdditionalAttributes() throws LockNotGrantedException, InterruptedException, IOException {
         final Map<String, AttributeValue> additionalAttributes = new HashMap<String, AttributeValue>();
-        additionalAttributes.put(TABLE_NAME, new AttributeValue().withS("ok"));
-        LockItem item = this.lockClient
-            .acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).withAdditionalAttributes(additionalAttributes).build());
-        assertTrue(item.getAdditionalAttributes().get(TABLE_NAME).getS().equals("ok"));
+        additionalAttributes.put(TABLE_NAME, AttributeValue.builder().s("ok").build());
+        LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(TEST_DATA.getBytes()))
+                .withAdditionalAttributes(additionalAttributes)
+                .build());
+        assertTrue(item.getAdditionalAttributes().get(TABLE_NAME).s().equals("ok"));
         item = this.lockClient.getLock("testKey1", Optional.empty()).get();
-        assertTrue(item.getAdditionalAttributes().get(TABLE_NAME).getS().equals("ok"));
+        assertTrue(item.getAdditionalAttributes().get(TABLE_NAME).s().equals("ok"));
         final AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(this.lockClient1Options);
         item = client.getLock("testKey1", Optional.empty()).get();
-        assertTrue(item.getAdditionalAttributes().get(TABLE_NAME).getS().equals("ok"));
+        assertTrue(item.getAdditionalAttributes().get(TABLE_NAME).s().equals("ok"));
         assertTrue(item.getAdditionalAttributes().equals(additionalAttributes));
         client.close();
     }
@@ -1350,8 +1463,11 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
     private void testInvalidAttribute(final String invalidAttribute) throws LockNotGrantedException, InterruptedException {
         final Map<String, AttributeValue> additionalAttributes = new HashMap<>();
-        additionalAttributes.put(invalidAttribute, new AttributeValue().withS("ok"));
-        this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).withAdditionalAttributes(additionalAttributes).build());
+        additionalAttributes.put(invalidAttribute, AttributeValue.builder().s("ok").build());
+        this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withData(ByteBuffer.wrap(TEST_DATA.getBytes()))
+                .withAdditionalAttributes(additionalAttributes)
+                .build());
     }
 
     @Test
@@ -1377,25 +1493,27 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void testSafeTimeLessThanHeartbeat() throws InterruptedException, IOException {
+    public void testSafeTimeLessThanHeartbeat() throws InterruptedException {
         final long badDangerZoneTimeMillis = 10L; // must be greater than heartbeat frequency (which is 10 millis)
         this.getShortLeaseLockWithSessionMonitor(badDangerZoneTimeMillis, null);
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void testSafeTimeMoreThanLeaseDuration() throws InterruptedException, IOException {
+    public void testSafeTimeMoreThanLeaseDuration() throws InterruptedException {
         final long badDangerZoneTimeMillis = Long.MAX_VALUE; // must be less than leaseDuration
         this.getShortLeaseLockWithSessionMonitor(badDangerZoneTimeMillis, null);
     }
 
     @Test(expected = NullPointerException.class)
-    public void testTimeUnitNotSetInAcquireLockOptionsWithSessionMonitor() throws InterruptedException, IOException {
-        final AcquireLockOptions options = AcquireLockOptions.builder("testKey1").withSessionMonitor(SHORT_LEASE_DUR / 2, Optional.empty()).build();
+    public void testTimeUnitNotSetInAcquireLockOptionsWithSessionMonitor() throws InterruptedException {
+        final AcquireLockOptions options = AcquireLockOptions.builder("testKey1")
+                .withSessionMonitor(SHORT_LEASE_DUR / 2, Optional.empty())
+                .build();
         this.shortLeaseLockClient.acquireLock(options);
     }
 
     @Test(expected = SessionMonitorNotSetException.class)
-    public void testFiringCallbackWithoutSessionMonitor() throws InterruptedException, IOException {
+    public void testFiringCallbackWithoutSessionMonitor() throws InterruptedException {
         final LockItem item = this.getShortLeaseLock();
         try {
             // we haven't called setSessionMonitor
@@ -1407,7 +1525,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test(expected = SessionMonitorNotSetException.class)
-    public void testAboutToExpireWithoutSessionMonitor() throws InterruptedException, IOException {
+    public void testAboutToExpireWithoutSessionMonitor() throws InterruptedException {
         final LockItem item = this.getShortLeaseLock();
         try {
             // we haven't called setSessionMonitor
@@ -1419,7 +1537,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testSessionMonitorCallbackFiredOnNonHeartbeatingLock() throws InterruptedException, IOException {
+    public void testSessionMonitorCallbackFiredOnNonHeartbeatingLock() throws InterruptedException {
         final Object sync = new Object();
         this.getShortLeaseLockWithSessionMonitor(SHORT_LEASE_DUR / 2, notifyObj(sync));
         waitOn(sync, SHORT_LEASE_DUR);
@@ -1446,8 +1564,13 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     public void testCallbackNotCalledOnClosingClient() throws InterruptedException, IOException {
         final long heartbeatFreq = 100L;
         final AmazonDynamoDBLockClient heartClient = Mockito.spy(new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME).withOwnerName(LOCALHOST).withLeaseDuration(3 * heartbeatFreq).withHeartbeatPeriod(heartbeatFreq)
-                .withTimeUnit(TimeUnit.MILLISECONDS).withCreateHeartbeatBackgroundThread(true).build()));
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME)
+                    .withOwnerName(LOCALHOST)
+                    .withLeaseDuration(3 * heartbeatFreq)
+                    .withHeartbeatPeriod(heartbeatFreq)
+                    .withTimeUnit(TimeUnit.MILLISECONDS)
+                    .withCreateHeartbeatBackgroundThread(true)
+                    .build()));
         final AtomicInteger integer = new AtomicInteger(0);
         final Runnable intSetter = () -> integer.set(1);
         final AcquireLockOptions options = stdSessionMonitorOptions(2 * heartbeatFreq, intSetter);
@@ -1461,8 +1584,13 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     public void testHeartbeatAllLocks() throws InterruptedException, IOException {
         final long heartbeatFreq = 100L;
         final AmazonDynamoDBLockClient heartClient = Mockito.spy(new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME).withOwnerName(LOCALHOST).withLeaseDuration(3 * heartbeatFreq).withHeartbeatPeriod(heartbeatFreq)
-                .withTimeUnit(TimeUnit.MILLISECONDS).withCreateHeartbeatBackgroundThread(false).build()));
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME)
+                    .withOwnerName(LOCALHOST)
+                    .withLeaseDuration(3 * heartbeatFreq)
+                    .withHeartbeatPeriod(heartbeatFreq)
+                    .withTimeUnit(TimeUnit.MILLISECONDS)
+                    .withCreateHeartbeatBackgroundThread(false)
+                    .build()));
 
         final LockItem lock1 = heartClient.acquireLock(AcquireLockOptions.builder("lock1").build());
         final LockItem lock2 = heartClient.acquireLock(AcquireLockOptions.builder("lock2").build());
@@ -1495,35 +1623,48 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         final long additionalWaitTime = expectedAttempts * refreshPeriod;
 
         final AmazonDynamoDBLockClient testLockClient = Mockito.spy(new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME).withOwnerName(LOCALHOST).withLeaseDuration(expectedAttempts * heartbeatFreq).withHeartbeatPeriod(heartbeatFreq)
-                .withTimeUnit(TimeUnit.MILLISECONDS).withCreateHeartbeatBackgroundThread(false).build()));
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME)
+                    .withOwnerName(LOCALHOST)
+                    .withLeaseDuration(expectedAttempts * heartbeatFreq)
+                    .withHeartbeatPeriod(heartbeatFreq)
+                    .withTimeUnit(TimeUnit.MILLISECONDS)
+                    .withCreateHeartbeatBackgroundThread(false)
+                    .build()));
 
-        Mockito.doThrow(new AmazonClientException("Client exception acquiring lock")).when(testLockClient).getLockFromDynamoDB(any(GetLockOptions.class));
+        Mockito.doThrow(SdkClientException.builder().message("Client exception acquiring lock").build())
+                .when(testLockClient).getLockFromDynamoDB(ArgumentMatchers.any(GetLockOptions.class));
         try {
-            testLockClient.acquireLock(
-                AcquireLockOptions.builder(lockName).withRefreshPeriod(refreshPeriod).withAdditionalTimeToWaitForLock(additionalWaitTime).withTimeUnit(TimeUnit.MILLISECONDS)
+            testLockClient.acquireLock(AcquireLockOptions.builder(lockName)
+                    .withRefreshPeriod(refreshPeriod)
+                    .withAdditionalTimeToWaitForLock(additionalWaitTime)
+                    .withTimeUnit(TimeUnit.MILLISECONDS)
                     .build());
         } finally {
-            Mockito.verify(testLockClient, Mockito.atLeast(expectedAttempts + 1)).getLockFromDynamoDB(any(GetLockOptions.class));
+            Mockito.verify(testLockClient, Mockito.atLeast(expectedAttempts + 1))
+                    .getLockFromDynamoDB(ArgumentMatchers.any(GetLockOptions.class));
             testLockClient.close();
         }
     }
 
     @Test
     public void testSetRequestLevelMetricCollector() throws InterruptedException, IOException {
-        final AmazonDynamoDB dynamoDB = Mockito.mock(AmazonDynamoDB.class);
-        when(dynamoDB.getItem(any(GetItemRequest.class))).thenReturn(new GetItemResult().withItem(null));
-        when(dynamoDB.putItem(any(PutItemRequest.class))).thenReturn(Mockito.mock(PutItemResult.class));
+        final DynamoDbClient dynamoDB = Mockito.mock(DynamoDbClient.class);
+        when(dynamoDB.getItem(ArgumentMatchers.any(GetItemRequest.class)))
+                .thenReturn(GetItemResponse.builder().item(null).build());
+        when(dynamoDB.putItem(ArgumentMatchers.any(PutItemRequest.class)))
+                .thenReturn(PutItemResponse.builder().build());
 
-        final AmazonDynamoDBLockClientOptions lockClientOptions =
-            AmazonDynamoDBLockClientOptions.builder(dynamoDB, TABLE_NAME).withOwnerName("ownerName0").withTimeUnit(TimeUnit.SECONDS).withSortKeyName("rangeKeyName").build();
+        final AmazonDynamoDBLockClientOptions lockClientOptions = AmazonDynamoDBLockClientOptions.builder(dynamoDB, TABLE_NAME)
+                    .withOwnerName("ownerName0")
+                .withTimeUnit(TimeUnit.SECONDS)
+                .withSortKeyName("rangeKeyName")
+                .build();
 
         final ArgumentCaptor<GetItemRequest> getRequestCaptor = ArgumentCaptor.forClass(GetItemRequest.class);
         final ArgumentCaptor<PutItemRequest> putRequestCaptor = ArgumentCaptor.forClass(PutItemRequest.class);
-        final RequestMetricCollector requestMetricCollector = Mockito.mock(RequestMetricCollector.class);
 
         final AcquireLockOptions acquireLockOptions =
-            AcquireLockOptions.builder("key0").withSortKey("rangeKey0").withDeleteLockOnRelease(false).withRequestMetricCollector(requestMetricCollector).build();
+            AcquireLockOptions.builder("key0").withSortKey("rangeKey0").withDeleteLockOnRelease(false).build();
 
         try (AmazonDynamoDBLockClient testLockClient = new AmazonDynamoDBLockClient(lockClientOptions)) {
             testLockClient.acquireLock(acquireLockOptions);
@@ -1534,8 +1675,6 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         final GetItemRequest getRequest = getRequestCaptor.getValue();
         final PutItemRequest putRequest = putRequestCaptor.getValue();
-        assertEquals(requestMetricCollector, getRequest.getRequestMetricCollector());
-        assertEquals(requestMetricCollector, putRequest.getRequestMetricCollector());
     }
 
     private LockItem getShortLeaseLock() throws InterruptedException {
@@ -1543,10 +1682,14 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     private static AcquireLockOptions stdSessionMonitorOptions(final long safeTimeMillis, final Runnable callback) {
-        return AcquireLockOptions.builder("testKey1").withSessionMonitor(safeTimeMillis, Optional.ofNullable(callback)).withTimeUnit(TimeUnit.MILLISECONDS).build();
+        return AcquireLockOptions.builder("testKey1")
+                .withSessionMonitor(safeTimeMillis, Optional.ofNullable(callback))
+                .withTimeUnit(TimeUnit.MILLISECONDS)
+                .build();
     }
 
-    private LockItem getShortLeaseLockWithSessionMonitor(final long safeTimeMillis, final Runnable callback) throws InterruptedException {
+    private LockItem getShortLeaseLockWithSessionMonitor(final long safeTimeMillis, final Runnable callback)
+            throws InterruptedException {
         return this.shortLeaseLockClient.acquireLock(stdSessionMonitorOptions(safeTimeMillis, callback));
     }
 
@@ -1568,14 +1711,20 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         };
     }
 
-    private void testDangerZoneCallback(final long leaseDurationMillis, final int nHeartbeats, final long heartbeatFrequencyMillis, final long safeTimeWithoutHeartbeatMillis)
+    private void testDangerZoneCallback(final long leaseDurationMillis, final int nHeartbeats,
+                                        final long heartbeatFrequencyMillis, final long safeTimeWithoutHeartbeatMillis)
         throws InterruptedException, IOException {
 
         // Set up a client with proper lease duration and heartbeat frequency
         // (no heartbeating thread)
         final AmazonDynamoDBLockClient dbClient = new AmazonDynamoDBLockClient(
-            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME).withOwnerName(INTEGRATION_TESTER).withLeaseDuration(leaseDurationMillis).withHeartbeatPeriod(heartbeatFrequencyMillis)
-                .withTimeUnit(TimeUnit.MILLISECONDS).withCreateHeartbeatBackgroundThread(false).build());
+            AmazonDynamoDBLockClientOptions.builder(this.dynamoDBMock, TABLE_NAME)
+                    .withOwnerName(INTEGRATION_TESTER)
+                    .withLeaseDuration(leaseDurationMillis)
+                    .withHeartbeatPeriod(heartbeatFrequencyMillis)
+                    .withTimeUnit(TimeUnit.MILLISECONDS)
+                    .withCreateHeartbeatBackgroundThread(false)
+                    .build());
 
         // heartbeatCount will measure how many heartbeats we actually get (and
         // serve as a synchronization point)
@@ -1617,7 +1766,8 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
      * @param nHeartbeats         the desired number of times to heartbeat the lock
      * @param heartbeatFreqMillis the period of time that between heartbeats
      */
-    private static void heartbeatNTimes(final LockItem item, final AtomicInteger heartbeatCount, final int nHeartbeats, final long heartbeatFreqMillis) {
+    private static void heartbeatNTimes(final LockItem item, final AtomicInteger heartbeatCount, final int nHeartbeats,
+                                        final long heartbeatFreqMillis) {
         final Thread worker = new Thread(() -> {
             for (heartbeatCount.set(0); heartbeatCount.get() < nHeartbeats; heartbeatCount.incrementAndGet()) {
                 final long startTimeMillis = LockClientUtils.INSTANCE.millisecondTime();

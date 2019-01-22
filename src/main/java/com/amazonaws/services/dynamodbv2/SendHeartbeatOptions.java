@@ -18,8 +18,6 @@ import java.nio.ByteBuffer;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
-import com.amazonaws.metrics.RequestMetricCollector;
-
 /**
  * A simple bean for sending lock heartbeats or updating the lock data with various combinations of overrides of the default
  * behavior. This bean avoids having to make every combination of override to the sendHeartbeat() method, or to have the user pass
@@ -33,16 +31,13 @@ public class SendHeartbeatOptions {
     private final Boolean deleteData;
     private final Long leaseDurationToEnsure;
     private final TimeUnit timeUnit;
-    private final Optional<RequestMetricCollector> requestMetricCollector;
 
-    private SendHeartbeatOptions(final LockItem lockItem, final Optional<ByteBuffer> data, final Boolean deleteData, final Long leaseDurationToEnsure, final TimeUnit timeUnit,
-        final Optional<RequestMetricCollector> requestMetricCollector) {
+    private SendHeartbeatOptions(final LockItem lockItem, final Optional<ByteBuffer> data, final Boolean deleteData, final Long leaseDurationToEnsure, final TimeUnit timeUnit) {
         this.lockItem = lockItem;
         this.data = data;
         this.deleteData = deleteData;
         this.leaseDurationToEnsure = leaseDurationToEnsure;
         this.timeUnit = timeUnit;
-        this.requestMetricCollector = requestMetricCollector;
     }
 
     public static class SendHeartbeatOptionsBuilder {
@@ -51,11 +46,9 @@ public class SendHeartbeatOptions {
         private Boolean deleteData;
         private Long leaseDurationToEnsure;
         private TimeUnit timeUnit;
-        private Optional<RequestMetricCollector> requestMetricCollector;
 
         SendHeartbeatOptionsBuilder(final LockItem lockItem) {
             this.lockItem = lockItem;
-            this.requestMetricCollector = Optional.empty();
             this.data = Optional.empty();
         }
 
@@ -96,24 +89,14 @@ public class SendHeartbeatOptions {
             return this;
         }
 
-        /**
-         * @param requestMetricCollector The request level metric collector to use, takes precedence over the ones at the
-         *                               http client level and AWS SDK level.
-         * @return a reference to this builder for fluent method chaining
-         */
-        public SendHeartbeatOptionsBuilder withRequestMetricCollector(final RequestMetricCollector requestMetricCollector) {
-            this.requestMetricCollector = Optional.ofNullable(requestMetricCollector);
-            return this;
-        }
-
         public SendHeartbeatOptions build() {
-            return new SendHeartbeatOptions(this.lockItem, this.data, this.deleteData, this.leaseDurationToEnsure, this.timeUnit, this.requestMetricCollector);
+            return new SendHeartbeatOptions(this.lockItem, this.data, this.deleteData, this.leaseDurationToEnsure, this.timeUnit);
         }
 
         @Override
         public java.lang.String toString() {
             return "SendHeartbeatOptions.SendHeartbeatOptionsBuilder(lockItem=" + this.lockItem + ", data=" + this.data + ", deleteData=" + this.deleteData
-                + ", leaseDurationToEnsure=" + this.leaseDurationToEnsure + ", timeUnit=" + this.timeUnit + ", requestMetricCollector=" + this.requestMetricCollector + ")";
+                + ", leaseDurationToEnsure=" + this.leaseDurationToEnsure + ", timeUnit=" + this.timeUnit + ")";
         }
     }
 
@@ -147,9 +130,5 @@ public class SendHeartbeatOptions {
 
     TimeUnit getTimeUnit() {
         return this.timeUnit;
-    }
-
-    Optional<RequestMetricCollector> getRequestMetricCollector() {
-        return this.requestMetricCollector;
     }
 }

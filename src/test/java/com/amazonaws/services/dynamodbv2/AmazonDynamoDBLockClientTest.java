@@ -14,6 +14,14 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.powermock.api.mockito.PowerMockito.doThrow;
+import static org.powermock.api.mockito.PowerMockito.spy;
+import static org.powermock.api.mockito.PowerMockito.when;
+
 import java.net.Inet4Address;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
@@ -25,54 +33,51 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
-import org.apache.http.HttpStatus;
+import com.amazonaws.services.dynamodbv2.model.LockCurrentlyUnavailableException;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
-import com.amazonaws.AmazonServiceException;
-import com.amazonaws.metrics.RequestMetricCollector;
-import com.amazonaws.services.dynamodbv2.document.Item;
-import com.amazonaws.services.dynamodbv2.document.ItemUtils;
-import com.amazonaws.services.dynamodbv2.document.internal.InternalUtils;
-import com.amazonaws.services.dynamodbv2.model.AttributeValue;
-import com.amazonaws.services.dynamodbv2.model.ConditionalCheckFailedException;
-import com.amazonaws.services.dynamodbv2.model.DescribeTableRequest;
-import com.amazonaws.services.dynamodbv2.model.DescribeTableResult;
-import com.amazonaws.services.dynamodbv2.model.GetItemResult;
-import com.amazonaws.services.dynamodbv2.model.LockCurrentlyUnavailableException;
-import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
-import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
-import com.amazonaws.services.dynamodbv2.model.ProvisionedThroughput;
-import com.amazonaws.services.dynamodbv2.model.ProvisionedThroughputExceededException;
-import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
-import com.amazonaws.services.dynamodbv2.model.TableDescription;
-import com.amazonaws.services.dynamodbv2.model.TableStatus;
-import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 
 import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient
         .PK_EXISTS_AND_RVN_IS_THE_SAME_AND_IS_RELEASED_CONDITION;
 import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient.RVN_VALUE_EXPRESSION_VARIABLE;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyLong;
-import static org.mockito.Matchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.powermock.api.mockito.PowerMockito.doThrow;
-import static org.powermock.api.mockito.PowerMockito.spy;
-import static org.powermock.api.mockito.PowerMockito.when;
+
+import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
+import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
+import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
+import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import software.amazon.awssdk.core.exception.SdkServiceException;
+import software.amazon.awssdk.http.HttpStatusCode;
+import software.amazon.awssdk.http.SdkHttpResponse;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
+import software.amazon.awssdk.services.dynamodb.model.DescribeTableRequest;
+import software.amazon.awssdk.services.dynamodb.model.DescribeTableResponse;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughputExceededException;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.TableDescription;
+import software.amazon.awssdk.services.dynamodb.model.TableStatus;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
+
 
 /**
  * Unit tests for AmazonDynamoDBLockClient.
@@ -83,10 +88,10 @@ import static org.powermock.api.mockito.PowerMockito.when;
 @PrepareForTest({AmazonDynamoDBLockClient.class, AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder.class, AmazonDynamoDBLockClientTest.class})
 public class AmazonDynamoDBLockClientTest {
     private static final String PARTITION_KEY = "pk";
-    private AmazonDynamoDB dynamodb;
+    private DynamoDbClient dynamodb;
     @Before
     public void setup() {
-        dynamodb = PowerMockito.mock(AmazonDynamoDB.class);
+        dynamodb = PowerMockito.mock(DynamoDbClient.class);
     }
 
     @Test
@@ -99,7 +104,12 @@ public class AmazonDynamoDBLockClientTest {
         AmazonDynamoDBLockClient lockClient = spy(
             new AmazonDynamoDBLockClient(getLockClientBuilder(threadName -> (runnable -> thread))
                     .build()));
-        when(dynamodb.getItem(any())).thenReturn(new GetItemResult());
+        Map<String, AttributeValue> item = new HashMap<>(4);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s("oolala").build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
         LockItem lockItem = lockClient.acquireLock(AcquireLockOptions.builder(PARTITION_KEY)
                 .withSessionMonitor(3001,
                     Optional.of(() -> System.out.println("monitored")))
@@ -110,56 +120,50 @@ public class AmazonDynamoDBLockClientTest {
 
     @Test
     public void lockTableExists_whenTableIsUpdating_returnTrue() {
-        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(new DescribeTableResult().withTable(new TableDescription().withTableStatus(TableStatus.UPDATING)));
+        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(DescribeTableResponse.builder().table(TableDescription.builder().tableStatus(TableStatus.UPDATING).build()).build());
         AmazonDynamoDBLockClient lockClient = getLockClient();
         assertTrue(lockClient.lockTableExists());
     }
 
     @Test
     public void lockTableExists_whenTableIsActive_returnTrue() {
-        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(new DescribeTableResult().withTable(new TableDescription().withTableStatus(TableStatus.ACTIVE)));
+        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(DescribeTableResponse.builder().table(TableDescription.builder().tableStatus(TableStatus.ACTIVE).build()).build());
         AmazonDynamoDBLockClient lockClient = getLockClient();
         assertTrue(lockClient.lockTableExists());
     }
 
     @Test
     public void lockTableExists_whenTableIsDeleting_returnFalse() {
-        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(new DescribeTableResult().withTable(new TableDescription().withTableStatus(TableStatus.DELETING)));
+        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(DescribeTableResponse.builder().table(TableDescription.builder().tableStatus(TableStatus.DELETING).build()).build());
         AmazonDynamoDBLockClient lockClient = getLockClient();
         assertFalse(lockClient.lockTableExists());
     }
 
     @Test
     public void lockTableExists_whenTableIsCreating_returnFalse() {
-        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(new DescribeTableResult().withTable(new TableDescription().withTableStatus(TableStatus.CREATING)));
+        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(DescribeTableResponse.builder().table(TableDescription.builder().tableStatus(TableStatus.CREATING).build()).build());
         AmazonDynamoDBLockClient lockClient = getLockClient();
         assertFalse(lockClient.lockTableExists());
     }
 
     @Test(expected = LockTableDoesNotExistException.class)
     public void assertLockTableExists_whenTableIsUpdating_returnTrue() {
-        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(new DescribeTableResult().withTable(new TableDescription().withTableStatus(TableStatus.UPDATING)));
-        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenThrow(new AmazonServiceException("Exception was not a ResourceNotFoundException"));
+        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenReturn(DescribeTableResponse.builder().table(TableDescription.builder().tableStatus(TableStatus.UPDATING).build()).build());
+        when(dynamodb.describeTable(any(DescribeTableRequest.class))).thenThrow(SdkServiceException.builder().message("Exception was not a ResourceNotFoundException").build());
         AmazonDynamoDBLockClient lockClient = getLockClient();
         lockClient.assertLockTableExists();
-    }
-
-    @Test
-    public void createLockTableInDynamoDB_whenMetricCollectorIsPresent() {
-        RequestMetricCollector collector = PowerMockito.mock(RequestMetricCollector.class);
-        CreateDynamoDBTableOptions createTableOptions = spy(CreateDynamoDBTableOptions.builder(dynamodb, new ProvisionedThroughput(1L, 1L), "tableName")
-            .withRequestMetricCollector(collector)
-            .build());
-        AmazonDynamoDBLockClient.createLockTableInDynamoDB(createTableOptions);
-        verify(createTableOptions, times(2)).getRequestMetricCollector();
     }
 
     @Test(expected = LockNotGrantedException.class)
     public void acquireLock_whenLockAlreadyExists_throwLockNotGrantedException() throws InterruptedException {
         setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        when(dynamodb.getItem(any())).thenReturn(new GetItemResult());
-        when(dynamodb.putItem(any())).thenThrow(new ConditionalCheckFailedException("item existed"));
+        Map<String, AttributeValue> lockItem = new HashMap<>(3);
+        lockItem.put("ownerName", AttributeValue.builder().s("owner").build());
+        lockItem.put("leaseDuration", AttributeValue.builder().s("1").build());
+        lockItem.put("recordVersionNumber", AttributeValue.builder().s("uuid").build());
+        when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(lockItem).build());
+        when(dynamodb.putItem(ArgumentMatchers.<PutItemRequest>any())).thenThrow(ConditionalCheckFailedException.builder().message("item existed").build());
         client.acquireLock(AcquireLockOptions.builder("asdf").build());
     }
 
@@ -167,8 +171,15 @@ public class AmazonDynamoDBLockClientTest {
     public void acquireLock_whenProvisionedThroughputExceeds_throwLockNotGrantedException() throws InterruptedException {
         setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        when(dynamodb.getItem(any())).thenReturn(new GetItemResult());
-        when(dynamodb.putItem(any())).thenThrow(new ProvisionedThroughputExceededException("Provisioned Throughput for the table exceeded"));
+
+        Map<String, AttributeValue> item = new HashMap<>(4);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s("oolala").build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
+        when(dynamodb.putItem(Mockito.<PutItemRequest>any())).thenThrow(ProvisionedThroughputExceededException.builder()
+                .message("Provisioned Throughput for the table exceeded").build());
         client.acquireLock(AcquireLockOptions.builder("asdf").build());
     }
 
@@ -177,7 +188,7 @@ public class AmazonDynamoDBLockClientTest {
         setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClientWithSortKey();
         Map<String, AttributeValue> additionalAttributes = new HashMap<>();
-        additionalAttributes.put("sort", new AttributeValue().withS("cool"));
+        additionalAttributes.put("sort", AttributeValue.builder().s("cool").build());
         client.acquireLock(AcquireLockOptions.builder("asdf")
             .withSortKey("sort")
             .withAdditionalAttributes(additionalAttributes).build());
@@ -187,7 +198,7 @@ public class AmazonDynamoDBLockClientTest {
     public void acquireLock_whenLockDoesNotExist_andWhenAcquireOnlyIfLockAlreadyExistsTrue_throwLockNotGrantedException() throws InterruptedException {
         setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        when(dynamodb.getItem(any())).thenReturn(new GetItemResult());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(null).build());
         client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireOnlyIfLockAlreadyExists(true).build());
     }
 
@@ -195,14 +206,16 @@ public class AmazonDynamoDBLockClientTest {
     public void acquireLock_withAcquireOnlyIfLockAlreadyExistsTrue_releasedLockConditionalCheckFailure() throws InterruptedException {
         UUID uuid = setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        doAnswer((InvocationOnMock invocation) -> new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
-                            .withString("customer", "customer1")
-                            .withString("ownerName", "foobar")
-                            .withString("recordVersionNumber", uuid.toString())
-                            .withString("leaseDuration", "1")
-                            .withBoolean("isReleased", true))))
-                .when(dynamodb).getItem(any());
-        when(dynamodb.putItem(any())).thenThrow(new ConditionalCheckFailedException("item existed"));
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("isReleased", AttributeValue.builder().bool(true).build());
+
+        doAnswer((InvocationOnMock invocation) -> GetItemResponse.builder().item(item).build())
+                .when(dynamodb).getItem(Mockito.<GetItemRequest>any());
+        when(dynamodb.putItem(Mockito.<PutItemRequest>any())).thenThrow(ConditionalCheckFailedException.builder().message("item existed").build());
         client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireOnlyIfLockAlreadyExists(true).build());
     }
 
@@ -210,15 +223,16 @@ public class AmazonDynamoDBLockClientTest {
     public void acquireLock_withAcquireOnlyIfLockAlreadyExists_releasedLockGetsCreated() throws InterruptedException {
         UUID uuid = setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        when(dynamodb.getItem(any())).thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
-                .withString("customer", "customer1")
-                .withString("ownerName", "foobar")
-                .withString("recordVersionNumber", uuid.toString())
-                .withString("leaseDuration", "1")
-                .withBoolean("isReleased", true))));
-        LockItem item = client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireOnlyIfLockAlreadyExists(true).build());
-        assertNotNull(item);
-        assertEquals("asdf", item.getPartitionKey());
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("isReleased", AttributeValue.builder().bool(true).build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
+        LockItem lockItem = client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireOnlyIfLockAlreadyExists(true).build());
+        assertNotNull(lockItem);
+        assertEquals("asdf", lockItem.getPartitionKey());
     }
 
     @Test
@@ -226,84 +240,83 @@ public class AmazonDynamoDBLockClientTest {
         throws InterruptedException {
         UUID uuid = setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        when(dynamodb.getItem(any()))
-            .thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
-                .withString("customer", "customer1")
-                .withString("ownerName", "foobar")
-                .withString("recordVersionNumber", uuid.toString())
-                .withString("leaseDuration", "1")
-                )))
-            .thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
-                    .withString("customer", "customer1")
-                    .withString("ownerName", "foobar")
-                    .withString("recordVersionNumber", "a different uuid")
-                    .withString("leaseDuration", "1")
-            )))
-            .thenReturn(new GetItemResult());
-        LockItem item = client.acquireLock(AcquireLockOptions.builder("customer1")
+        Map<String, AttributeValue> item = new HashMap<>(4);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+
+        Map<String, AttributeValue> differentItem = new HashMap<>(item);
+        differentItem.put("recordVersionNumber", AttributeValue.builder().s("a different uuid").build());
+
+        when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(item).build())
+            .thenReturn(GetItemResponse.builder().item(differentItem).build())
+            .thenReturn(GetItemResponse.builder().item(differentItem).build());
+        LockItem lockItem = client.acquireLock(AcquireLockOptions.builder("customer1")
             .withRefreshPeriod(800L)
-            .withAdditionalTimeToWaitForLock(1000L)
+            .withAdditionalTimeToWaitForLock(100000L)
             .withTimeUnit(TimeUnit.MILLISECONDS)
             .withDeleteLockOnRelease(false).build());
-        assertNotNull(item);
+        assertNotNull(lockItem);
     }
 
     @Test(expected = LockNotGrantedException.class)
     public void acquireLock_withConsistentLockDataTrue_releasedLockConditionalCheckFailure() throws InterruptedException {
-    UUID uuid = setOwnerNameToUuid();
-    AmazonDynamoDBLockClient client = getLockClient();
-
-        doAnswer((InvocationOnMock invocation) -> new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
-                .withString("customer", "customer1")
-                .withString("ownerName", "foobar")
-                .withString("recordVersionNumber", uuid.toString())
-                .withString("leaseDuration", "1")
-                .withBoolean("isReleased", true))))
-                .when(dynamodb).getItem(any());
-        when(dynamodb.putItem(any())).thenThrow(new ConditionalCheckFailedException("RVN constraint failed"));
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("isReleased", AttributeValue.builder().bool(true).build());
+        doAnswer((InvocationOnMock invocation) -> GetItemResponse.builder().item(item).build())
+                .when(dynamodb).getItem(Mockito.<GetItemRequest>any());
+        when(dynamodb.putItem(Mockito.<PutItemRequest>any())).thenThrow(ConditionalCheckFailedException.builder().message("RVN constraint failed").build());
         client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireReleasedLocksConsistently(true).build());
     }
 
     @Test
     public void acquireLock_withNotUpdateRecordAndConsistentLockDataTrue_releasedLockGetsCreated() throws InterruptedException {
-        UUID uuid = setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        when(dynamodb.getItem(any())).thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
-                .withString("customer", "customer1")
-                .withString("ownerName", "foobar")
-                .withString("recordVersionNumber", "a specific rvn")
-                .withString("leaseDuration", "1")
-                .withBoolean("isReleased", true))));
-        LockItem item = client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireReleasedLocksConsistently(true).withUpdateExistingLockRecord
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s("a specific rvn").build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("isReleased", AttributeValue.builder().bool(true).build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
+        LockItem lockItem = client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireReleasedLocksConsistently(true).withUpdateExistingLockRecord
                 (false).build());
-        assertNotNull(item);
-        assertEquals("asdf", item.getPartitionKey());
+        assertNotNull(lockItem);
+        assertEquals("asdf", lockItem.getPartitionKey());
         ArgumentCaptor<PutItemRequest> putItemCaptor = ArgumentCaptor.forClass(PutItemRequest.class);
         verify(dynamodb).putItem(putItemCaptor.capture());
         PutItemRequest putItemRequest = putItemCaptor.getValue();
-        assertEquals(PK_EXISTS_AND_RVN_IS_THE_SAME_AND_IS_RELEASED_CONDITION, putItemRequest.getConditionExpression());
-        assertEquals("a specific rvn", putItemRequest.getExpressionAttributeValues().get(RVN_VALUE_EXPRESSION_VARIABLE).getS());
+        assertEquals(PK_EXISTS_AND_RVN_IS_THE_SAME_AND_IS_RELEASED_CONDITION, putItemRequest.conditionExpression());
+        assertEquals("a specific rvn", putItemRequest.expressionAttributeValues().get(RVN_VALUE_EXPRESSION_VARIABLE).s());
     }
 
     @Test
     public void acquireLock_withUpdateRecordAndConsistentLockDataTrue_releasedLockGetsCreated() throws InterruptedException {
-        UUID uuid = setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        when(dynamodb.getItem(any())).thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
-                .withString("customer", "customer1")
-                .withString("ownerName", "foobar")
-                .withString("recordVersionNumber", "a specific rvn")
-                .withString("leaseDuration", "1")
-                .withBoolean("isReleased", true))));
-        LockItem item = client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireReleasedLocksConsistently(true).withUpdateExistingLockRecord
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s("a specific rvn").build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("isReleased", AttributeValue.builder().bool(true).build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
+        LockItem lockItem = client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireReleasedLocksConsistently(true).withUpdateExistingLockRecord
                 (true).build());
-        assertNotNull(item);
-        assertEquals("asdf", item.getPartitionKey());
+        assertNotNull(lockItem);
+        assertEquals("asdf", lockItem.getPartitionKey());
         ArgumentCaptor<UpdateItemRequest> updateItemCaptor = ArgumentCaptor.forClass(UpdateItemRequest.class);
         verify(dynamodb).updateItem(updateItemCaptor.capture());
         UpdateItemRequest updateItemRequest = updateItemCaptor.getValue();
-        assertEquals(PK_EXISTS_AND_RVN_IS_THE_SAME_AND_IS_RELEASED_CONDITION, updateItemRequest.getConditionExpression());
-        assertEquals("a specific rvn", updateItemRequest.getExpressionAttributeValues().get(RVN_VALUE_EXPRESSION_VARIABLE).getS());
+        assertEquals(PK_EXISTS_AND_RVN_IS_THE_SAME_AND_IS_RELEASED_CONDITION, updateItemRequest.conditionExpression());
+        assertEquals("a specific rvn", updateItemRequest.expressionAttributeValues().get(RVN_VALUE_EXPRESSION_VARIABLE).s());
     }
 
     /*
@@ -313,7 +326,9 @@ public class AmazonDynamoDBLockClientTest {
     public void acquireLock_whenLockNotExists_andSkipBlockingWaitIsTurnedOn()
         throws InterruptedException {
         AmazonDynamoDBLockClient client = getLockClient();
-        when(dynamodb.getItem(any())).thenReturn(new GetItemResult());
+
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(null).build());
+
         LockItem lockItem = client.acquireLock(AcquireLockOptions.builder("customer1")
             .withShouldSkipBlockingWait(true)
             .withDeleteLockOnRelease(false).build());
@@ -330,40 +345,41 @@ public class AmazonDynamoDBLockClientTest {
         throws InterruptedException {
         AmazonDynamoDBLockClient client = getLockClient();
         UUID uuid = setOwnerNameToUuid();
-        when(dynamodb.getItem(any()))
-            .thenReturn(new GetItemResult().withItem(ItemUtils.toAttributeValues(new Item()
-                .withString("customer", "customer1")
-                .withString("ownerName", "foobar")
-                .withString("recordVersionNumber", uuid.toString())
-                .withString("leaseDuration", "1")
-                .withBoolean("isReleased", true)
-                )))
-            .thenReturn(new GetItemResult());
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("isReleased", AttributeValue.builder().bool(true).build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(item).build())
+            .thenReturn(GetItemResponse.builder().build());
         LockItem lockItem = client.acquireLock(AcquireLockOptions.builder("customer1")
             .withShouldSkipBlockingWait(true)
             .withDeleteLockOnRelease(false).build());
         Assert.assertNotNull("Failed to get lock item, when the lock is not present in the db", lockItem);
     }
     /*
-     * Test case for the scenario, where the lock is being held by the first owner and the lock duration has not past the lease duration.
-     * In this case, We should expect a LockAlreadyOwnedException when shouldSkipBlockingWait is set.
+     * Test case for the scenario, where the lock is being held by the first owner and the lock duration has not past
+     * the lease duration. In this case, We should expect a LockAlreadyOwnedException when shouldSkipBlockingWait is set.
      */
     @Test(expected = LockCurrentlyUnavailableException.class)
     public void acquireLock_whenLockAlreadyExistsAndIsNotReleased_andSkipBlockingWait_throwsAlreadyOwnedException()
         throws InterruptedException {
         UUID uuid = setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        when(dynamodb.getItem(any()))
-            .thenReturn(new GetItemResult().withItem(InternalUtils.toAttributeValues(new Item()
-                .withString("customer", "customer1")
-                .withString("ownerName", "foobar")
-                .withString("recordVersionNumber", uuid.toString())
-                .withString("leaseDuration", "10001")
-                )))
-            .thenReturn(new GetItemResult());
-        client.acquireLock(AcquireLockOptions.builder("customer1")
-            .withShouldSkipBlockingWait(true)
-            .withDeleteLockOnRelease(false).build());
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("100000").build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(item).build())
+            .thenReturn(GetItemResponse.builder().build());
+        AcquireLockOptions acquireLockOptions = AcquireLockOptions.builder("customer1")
+                .withShouldSkipBlockingWait(true)
+                .withDeleteLockOnRelease(false).build();
+        client.acquireLock(acquireLockOptions);
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -420,15 +436,14 @@ public class AmazonDynamoDBLockClientTest {
         client.sendHeartbeat(SendHeartbeatOptions.builder(item)
             .withDeleteData(null)
             .withData(ByteBuffer.wrap("data".getBytes()))
-            .withRequestMetricCollector(RequestMetricCollector.NONE)
             .build());
     }
 
     @Test
     public void sendHeartbeat_whenServiceUnavailable_andHoldLockOnServiceUnavailableFalse_thenDoNotUpdateLookupTime() throws LockNotGrantedException {
-        AmazonServiceException serviceUnavailableException = new AmazonServiceException("Service Unavailable.");
-        serviceUnavailableException.setStatusCode(HttpStatus.SC_SERVICE_UNAVAILABLE);
-        when(dynamodb.updateItem(any())).thenThrow(serviceUnavailableException);
+        AwsServiceException serviceUnavailableException = AwsServiceException.builder().message("Service Unavailable.")
+                .awsErrorDetails(AwsErrorDetails.builder().sdkHttpResponse(SdkHttpResponse.builder().statusCode(HttpStatusCode.SERVICE_UNAVAILABLE).build()).build()).build();
+        when(dynamodb.updateItem(Mockito.<UpdateItemRequest>any())).thenThrow(serviceUnavailableException);
 
         UUID uuid = setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(getLockClientBuilder(null).withHoldLockOnServiceUnavailable(false).build());
@@ -438,10 +453,10 @@ public class AmazonDynamoDBLockClientTest {
                 false, uuid.toString(), 10000L, lastUpdatedTimeInMilliseconds,
                 "rvn", false, Optional.empty(), null);
 
-        AmazonServiceException amazonServiceException = null;
+        AwsServiceException amazonServiceException = null;
         try {
             client.sendHeartbeat(SendHeartbeatOptions.builder(item).build());
-        } catch (AmazonServiceException e) {
+        } catch (AwsServiceException e) {
             amazonServiceException = e;
         }
 
@@ -451,9 +466,9 @@ public class AmazonDynamoDBLockClientTest {
 
     @Test
     public void sendHeartbeat_whenServiceUnavailable_andHoldLockOnServiceUnavailableTrue_thenUpdateLookupTimeUsingUpdateLookUpTimeMethod() throws LockNotGrantedException, InterruptedException {
-        AmazonServiceException serviceUnavailableException = new AmazonServiceException("Service Unavailable.");
-        serviceUnavailableException.setStatusCode(HttpStatus.SC_SERVICE_UNAVAILABLE);
-        when(dynamodb.updateItem(any())).thenThrow(serviceUnavailableException);
+        AwsServiceException serviceUnavailableException = AwsServiceException.builder().message("Service Unavailable.")
+                .awsErrorDetails(AwsErrorDetails.builder().sdkHttpResponse(SdkHttpResponse.builder().statusCode(HttpStatusCode.SERVICE_UNAVAILABLE).build()).build()).build();
+        when(dynamodb.updateItem(Mockito.<UpdateItemRequest>any())).thenThrow(serviceUnavailableException);
 
         UUID uuid = setOwnerNameToUuid();
         long leaseDuration = 10000L;

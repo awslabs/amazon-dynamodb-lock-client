@@ -1,6 +1,19 @@
+/**
+ * Copyright 2013-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * <p>
+ * Licensed under the Amazon Software License (the "License").
+ * You may not use this file except in compliance with the License.
+ * A copy of the License is located at
+ * <p>
+ * http://aws.amazon.com/asl/
+ * <p>
+ * or in the "license" file accompanying this file. This file is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express
+ * or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
+ */
 package com.amazonaws.services.dynamodbv2;
 
-import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -12,42 +25,42 @@ import java.util.NoSuchElementException;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
-import org.mockito.runners.MockitoJUnitRunner;
 
-import com.amazonaws.services.dynamodbv2.document.Item;
-import com.amazonaws.services.dynamodbv2.document.internal.InternalUtils;
-import com.amazonaws.services.dynamodbv2.model.AttributeValue;
-import com.amazonaws.services.dynamodbv2.model.ScanRequest;
-import com.amazonaws.services.dynamodbv2.model.ScanResult;
+import org.mockito.junit.MockitoJUnitRunner;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
+import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
 
 /**
  * Unit tests for LockItemPaginatedScanIterator.
  *
- * @author <a href="mailto:amcp@amazon.co.jp">Alexander Patrikalakis</a> 2017-07-13
+ * @author <a href="mailto:amcp@amazon.com">Alexander Patrikalakis</a> 2017-07-13
  */
 @RunWith(MockitoJUnitRunner.class)
 public class LockItemPaginatedScanIteratorTest {
     @Mock
-    AmazonDynamoDB dynamodb;
+    DynamoDbClient dynamodb;
     @Mock
     LockItemFactory factory;
 
     @Test(expected = UnsupportedOperationException.class)
     public void remove_throwsUnsupportedOperationException() {
-        LockItemPaginatedScanIterator sut = new LockItemPaginatedScanIterator(dynamodb, new ScanRequest(), factory);
+        LockItemPaginatedScanIterator sut = new LockItemPaginatedScanIterator(dynamodb, ScanRequest.builder().build(), factory);
         sut.remove();
     }
 
     @Test(expected = NoSuchElementException.class)
     public void next_whenDoesNotHaveNext_throwsNoSuchElementException() {
-        ScanRequest request = new ScanRequest();
+        ScanRequest request = ScanRequest.builder().build();
         LockItemPaginatedScanIterator sut = new LockItemPaginatedScanIterator(dynamodb, request, factory);
         List<Map<String, AttributeValue>> list1 = new ArrayList<>();
-        list1.add(InternalUtils.toAttributeValues(new Item()));
-        when(dynamodb.scan(any()))
-            .thenReturn(new ScanResult().withItems(list1).withCount(1).withLastEvaluatedKey(new HashMap<>()))
-            .thenReturn(new ScanResult().withItems(Collections.emptyList()).withCount(0));
+        list1.add(new HashMap<>());
+        when(dynamodb.scan(ArgumentMatchers.<ScanRequest>any()))
+            .thenReturn(ScanResponse.builder().items(list1).count(1).lastEvaluatedKey(new HashMap<>()).build())
+            .thenReturn(ScanResponse.builder().items(Collections.emptyList()).count(0).build());
         sut.next();
         sut.next();
     }

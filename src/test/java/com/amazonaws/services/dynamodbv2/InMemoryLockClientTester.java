@@ -14,7 +14,9 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.security.SecureRandom;
 import java.util.concurrent.TimeUnit;
 
@@ -22,11 +24,13 @@ import org.junit.After;
 import org.junit.Before;
 import org.mockito.Mockito;
 
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration;
-import com.amazonaws.services.dynamodbv2.model.ProvisionedThroughput;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.DeleteTableRequest;
+import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughput;
 
 import static org.mockito.AdditionalAnswers.delegatesTo;
 
@@ -132,7 +136,7 @@ public abstract class InMemoryLockClientTester {
 
     protected static final GetLockOptions GET_LOCK_OPTIONS_DO_NOT_DELETE_ON_RELEASE = GetLockOptions.builder("testKey1").withDeleteLockOnRelease(false).build();
 
-    protected AmazonDynamoDB dynamoDBMock;
+    protected DynamoDbClient dynamoDBMock;
     protected AmazonDynamoDBLockClient lockClient;
     protected AmazonDynamoDBLockClient lockClientWithHeartbeating;
     protected AmazonDynamoDBLockClient lockClientForRangeKeyTable;
@@ -145,7 +149,7 @@ public abstract class InMemoryLockClientTester {
 
     @Before
     public void setUp() {
-        final AWSCredentials credentials = new BasicAWSCredentials(TABLE_NAME, "");
+        final AwsCredentials credentials = AwsBasicCredentials.create(TABLE_NAME, "d");
         final String endpoint = System.getProperty("dynamodb-local.endpoint");
         if (endpoint == null) {
             throw new IllegalStateException("The JVM was not launched with the dynamodb-local.endpoint system property set");
@@ -154,21 +158,31 @@ public abstract class InMemoryLockClientTester {
             throw new IllegalStateException("The JVM was not launched with the dynamodb-local.endpoint system property set to a non-empty string");
         }
 
-        this.dynamoDBMock = safelySpyDDB(AmazonDynamoDBClientBuilder.standard().withCredentials(new AWSStaticCredentialsProvider(credentials))
-                .withEndpointConfiguration(new EndpointConfiguration(endpoint, "")).build());
+        this.dynamoDBMock = safelySpyDDB(DynamoDbClient.builder().credentialsProvider(StaticCredentialsProvider.create(credentials))
+                .endpointOverride(URI.create(endpoint))
+                .region(Region.US_WEST_2)
+                .build());
 
-        AmazonDynamoDBLockClient.createLockTableInDynamoDB(
-            CreateDynamoDBTableOptions.builder(this.dynamoDBMock, new ProvisionedThroughput().withReadCapacityUnits(10L).withWriteCapacityUnits(10L), TABLE_NAME).build());
-        AmazonDynamoDBLockClient.createLockTableInDynamoDB(
-            CreateDynamoDBTableOptions.builder(this.dynamoDBMock, new ProvisionedThroughput().withReadCapacityUnits(10L).withWriteCapacityUnits(10L), RANGE_KEY_TABLE_NAME)
+        AmazonDynamoDBLockClient.createLockTableInDynamoDB(CreateDynamoDBTableOptions.builder(this.dynamoDBMock,
+                ProvisionedThroughput.builder().readCapacityUnits(10L).writeCapacityUnits(10L).build(),
+                TABLE_NAME).build());
+
+        AmazonDynamoDBLockClient.createLockTableInDynamoDB(CreateDynamoDBTableOptions.builder(this.dynamoDBMock,
+                ProvisionedThroughput.builder().readCapacityUnits(10L).writeCapacityUnits(10L).build(),
+                RANGE_KEY_TABLE_NAME)
                 .withSortKeyName("rangeKey").build());
 
         this.lockClient1Options =
-            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER).withLeaseDuration(3L).withHeartbeatPeriod(1L)
-                .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(false).build();
+            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER)
+                    .withLeaseDuration(3L)
+                    .withHeartbeatPeriod(1L)
+                    .withTimeUnit(TimeUnit.SECONDS)
+                    .withCreateHeartbeatBackgroundThread(false)
+                    .build();
         this.lockClient = Mockito.spy(new AmazonDynamoDBLockClient(this.lockClient1Options));
         this.lockClientWithHeartbeating = Mockito.spy(new AmazonDynamoDBLockClient(
-            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER).withLeaseDuration(3L).withHeartbeatPeriod(1L)
+            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME,
+                    INTEGRATION_TESTER).withLeaseDuration(3L).withHeartbeatPeriod(1L)
                 .withTimeUnit(TimeUnit.SECONDS).withCreateHeartbeatBackgroundThread(true).build()));
         this.lockClientNoTable = Mockito.spy(new AmazonDynamoDBLockClient(
             new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, "doesNotExist", INTEGRATION_TESTER).withLeaseDuration(3L).withHeartbeatPeriod(1L)
@@ -190,14 +204,33 @@ public abstract class InMemoryLockClientTester {
                         .withHeartbeatPeriod(10L).withTimeUnit(TimeUnit.MILLISECONDS).withSortKeyName("rangeKey").withCreateHeartbeatBackgroundThread(false).build()));
     }
 
-    public AmazonDynamoDB safelySpyDDB(final AmazonDynamoDB dynamoDB) {
+    public DynamoDbClient safelySpyDDB(final DynamoDbClient dynamoDB) {
         //Replaces Mockito.spy(this.dynamoDBMock) and works for proxies as well (i.e. dynamodb local embedded)
-        return Mockito.mock(AmazonDynamoDB.class, delegatesTo(dynamoDB));
+        return Mockito.mock(DynamoDbClient.class, delegatesTo(dynamoDB));
     }
 
     @After
     public void deleteTables() {
-        this.dynamoDBMock.deleteTable(TABLE_NAME);
-        this.dynamoDBMock.deleteTable(RANGE_KEY_TABLE_NAME);
+        this.dynamoDBMock.deleteTable(DeleteTableRequest.builder().tableName(TABLE_NAME).build());
+        this.dynamoDBMock.deleteTable(DeleteTableRequest.builder().tableName(RANGE_KEY_TABLE_NAME).build());
+    }
+
+    protected final String byteBufferToString(ByteBuffer buffer) {
+        return byteBufferToString(buffer, Charset.defaultCharset());
+    }
+    // https://stackoverflow.com/questions/1252468/java-converting-string-to-and-from-bytebuffer-and-associated-problems
+    private final String byteBufferToString(ByteBuffer buffer, Charset charset) {
+        return new String(getBytes(buffer), charset);
+    }
+
+    protected byte[] getBytes(ByteBuffer buffer) {
+        byte[] bytes;
+        if (buffer.hasArray()) {
+            bytes = buffer.array();
+        } else {
+            bytes = new byte[buffer.remaining()];
+            buffer.get(bytes);
+        }
+        return bytes;
     }
 }

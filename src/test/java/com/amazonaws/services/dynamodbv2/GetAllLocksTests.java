@@ -73,7 +73,7 @@ public class GetAllLocksTests extends InMemoryLockClientTester {
 
         final LockItem retrievedLock = allLocksFromDynamoDB.get(0);
         assertEquals(singleLock.getPartitionKey(), retrievedLock.getPartitionKey());
-        assertTrue(Arrays.equals(singleLock.getData().get().array(), retrievedLock.getData().get().array()));
+        assertTrue(Arrays.equals(getBytes(singleLock.getData().get()), getBytes(retrievedLock.getData().get())));
         assertEquals(singleLock.getRecordVersionNumber(), retrievedLock.getRecordVersionNumber());
 
         this.lockClient.getLock("Test 1", Optional.empty()).get().close();
@@ -100,12 +100,12 @@ public class GetAllLocksTests extends InMemoryLockClientTester {
 
         LockItem retrievedLock = lockItemsByKey.get(firstLock.getPartitionKey());
         assertEquals(firstLock.getPartitionKey(), retrievedLock.getPartitionKey());
-        assertTrue(Arrays.equals(firstLock.getData().get().array(), retrievedLock.getData().get().array()));
+        assertTrue(Arrays.equals(getBytes(firstLock.getData().get()), getBytes(retrievedLock.getData().get())));
         assertEquals(firstLock.getRecordVersionNumber(), retrievedLock.getRecordVersionNumber());
 
         retrievedLock = lockItemsByKey.get(secondLock.getPartitionKey());
         assertEquals(secondLock.getPartitionKey(), retrievedLock.getPartitionKey());
-        assertTrue(Arrays.equals(secondLock.getData().get().array(), retrievedLock.getData().get().array()));
+        assertTrue(Arrays.equals(getBytes(secondLock.getData().get()), getBytes(retrievedLock.getData().get())));
         assertEquals(secondLock.getRecordVersionNumber(), retrievedLock.getRecordVersionNumber());
 
         firstLock.close();
@@ -115,7 +115,7 @@ public class GetAllLocksTests extends InMemoryLockClientTester {
         assertEquals(1, allLocksFromDynamoDB.size());
         retrievedLock = allLocksFromDynamoDB.get(0);
         assertEquals(secondLock.getPartitionKey(), retrievedLock.getPartitionKey());
-        assertTrue(Arrays.equals(secondLock.getData().get().array(), retrievedLock.getData().get().array()));
+        assertTrue(Arrays.equals(getBytes(secondLock.getData().get()), getBytes(retrievedLock.getData().get())));
         assertEquals(secondLock.getRecordVersionNumber(), retrievedLock.getRecordVersionNumber());
 
         secondLock.close();
