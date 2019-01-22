@@ -1,4 +1,5 @@
 language: java
+sudo: required
 dist: xenial
 jdk:
   - openjdk8
@@ -9,7 +10,7 @@ branches:
   only:
     - master
 script:
-  - mvn install verify -Pintegration-tests
+  - mvn install -Pintegration-tests
 notifications:
   email:
     - amcp@amazon.com
