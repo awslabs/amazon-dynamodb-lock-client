@@ -402,6 +402,14 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      */
     @SuppressWarnings("resource") // LockItem.close() does not need to be called until the lock is acquired, so we suppress the warning here.
     public LockItem acquireLock(final AcquireLockOptions options) throws LockNotGrantedException, InterruptedException {
+	return acquireLock(options, /*waitForLease=*/true);
+    }
+
+
+    /**
+     * @param waitForLease whether this method waits for at least the lease time before giving up
+     */
+    public LockItem acquireLock(final AcquireLockOptions options, final boolean waitForLease) throws LockNotGrantedException, InterruptedException {
         Objects.requireNonNull(options, "Cannot acquire lock when options is null");
         Objects.requireNonNull(options.getPartitionKey(), "Cannot acquire lock when key is null");
 
@@ -509,7 +517,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                         lockTryingToBeAcquired = existingLock.get();
                         if (!alreadySleptOnceForOneLeasePeriod) {
                             alreadySleptOnceForOneLeasePeriod = true;
-                            millisecondsToWait += existingLock.get().getLeaseDuration();
+                            if (waitForLease) {
+                                millisecondsToWait += existingLock.get().getLeaseDuration();
+                            }
                         }
                     } else {
                         if (lockTryingToBeAcquired.getRecordVersionNumber().equals(existingLock.get().getRecordVersionNumber())) {
@@ -780,6 +790,13 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      * @throws InterruptedException in case this.acquireLock was interrupted.
      */
     public Optional<LockItem> tryAcquireLock(final AcquireLockOptions options) throws InterruptedException {
+        return tryAcquireLock(options, /*waitForLease=*/true);
+    }
+
+    /**
+     * @param waitForLease whether this method waits for at least the lease time before giving up
+     */
+    public Optional<LockItem> tryAcquireLock(final AcquireLockOptions options, final boolean waitForLease) throws InterruptedException {
         try {
             return Optional.of(this.acquireLock(options));
         } catch (final LockNotGrantedException x) {
