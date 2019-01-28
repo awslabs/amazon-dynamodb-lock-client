@@ -168,6 +168,21 @@ public class AmazonDynamoDBLockClientTest {
     }
 
     @Test(expected = LockNotGrantedException.class)
+    public void acquireLock_whenLockAlreadyExists_noWaitForLease() throws InterruptedException {
+        setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+        Map<String, AttributeValue> lockItem = new HashMap<>(3);
+        lockItem.put("ownerName", AttributeValue.builder().s("owner").build());
+
+        // Use a long lease, since the method should not wait for the lease anyway
+        lockItem.put("leaseDuration", AttributeValue.builder().s("1000000").build());
+        lockItem.put("recordVersionNumber", AttributeValue.builder().s("uuid").build());
+        when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(lockItem).build());
+        when(dynamodb.putItem(ArgumentMatchers.<PutItemRequest>any())).thenThrow(ConditionalCheckFailedException.builder().message("item existed").build());
+        client.acquireLock(AcquireLockOptions.builder("asdf").build());
+    }
+
+    @Test(expected = LockNotGrantedException.class)
     public void acquireLock_whenProvisionedThroughputExceeds_throwLockNotGrantedException() throws InterruptedException {
         setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
