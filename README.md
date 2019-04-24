@@ -91,7 +91,7 @@ releaseLock() or lockItem.close()
 
 ### Acquire lock with timeout
 You can acquire a lock via two different methods: acquireLock or tryAcquireLock. The difference between the
-two methods is that tryAcquireLock will return Optional.absent() if the lock was not acquired, whereas
+two methods is that tryAcquireLock will return Optional.empty() if the lock was not acquired, whereas
 acquireLock will throw a LockNotGrantedException. Both methods provide optional parameters where you can specify
 an additional timeout for acquiring the lock. Then they will try to acquire the lock for that amount of time
 before giving up. They do this by continually polling DynamoDB according to an interval you set up. Remember that
