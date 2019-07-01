@@ -264,7 +264,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         Objects.requireNonNull(amazonDynamoDBLockClientOptions.getOwnerName(), "Owner name cannot be null");
         Objects.requireNonNull(amazonDynamoDBLockClientOptions.getTimeUnit(), "Time unit cannot be null");
         Objects.requireNonNull(amazonDynamoDBLockClientOptions.getPartitionKeyName(), "Partition Key Name cannot be null");
-        Objects.requireNonNull(amazonDynamoDBLockClientOptions.getSortKeyName(), "Sort Key Name cannot be null (use Optional.absent())");
+        Objects.requireNonNull(amazonDynamoDBLockClientOptions.getSortKeyName(), "Sort Key Name cannot be null (use Optional.empty())");
         Objects.requireNonNull(amazonDynamoDBLockClientOptions.getNamedThreadCreator(), "Named thread creator cannot be null");
         this.dynamoDB = amazonDynamoDBLockClientOptions.getDynamoDBClient();
         this.tableName = amazonDynamoDBLockClientOptions.getTableName();
