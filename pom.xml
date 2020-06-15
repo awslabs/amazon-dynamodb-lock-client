@@ -31,7 +31,7 @@
 
         <!-- compile dependencies -->
         <aws.java.sdk.version>2.3.5</aws.java.sdk.version>
-        <netty.version>4.1.32.Final</netty.version>
+        <netty.version>4.1.50.Final</netty.version>
         <commons-logging.version>1.2</commons-logging.version>
 
         <!-- test dependencies -->
