@@ -990,6 +990,21 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         item.close();
     }
 
+    @Test(expected = LockNotGrantedException.class)
+    public void testAcquireLockMultipleTimesNotReentrant() throws InterruptedException {
+        LockItem item = this.lockClientWithHeartbeating.acquireLock(AcquireLockOptions.builder("testKey1").build());
+        item = this.lockClientWithHeartbeating.acquireLock(AcquireLockOptions.builder("testKey1").build());
+        item.close();
+    }
+
+    @Test
+    public void testAcquireLockMultipleTimesReentrant() throws InterruptedException {
+        LockItem item = this.lockClientWithHeartbeating.acquireLock(AcquireLockOptions.builder("testKey1").build());
+        item = this.lockClientWithHeartbeating.acquireLock(AcquireLockOptions.builder("testKey1")
+            .withReentrant(true).build());
+        item.close();
+    }
+
     @Test
     public void testSendHeatbeatWithRangeKey() throws IOException, LockNotGrantedException, InterruptedException {
 

@@ -408,6 +408,13 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         final String key = options.getPartitionKey();
         final Optional<String> sortKey = options.getSortKey();
 
+        if (options.getReentrant() && hasLock(key, sortKey)) { // Call hasLock() to avoid making a db call when the client does not own the lock.
+            Optional<LockItem> lock = getLock(key, sortKey);
+            if (lock.isPresent() && !lock.get().isExpired()) {
+                return lock.get();
+            }
+        }
+
         if (options.getAdditionalAttributes().containsKey(this.partitionKeyName) || options.getAdditionalAttributes().containsKey(OWNER_NAME) || options
             .getAdditionalAttributes().containsKey(LEASE_DURATION) || options.getAdditionalAttributes().containsKey(RECORD_VERSION_NUMBER) || options
             .getAdditionalAttributes().containsKey(DATA) || this.sortKeyName.isPresent() && options.getAdditionalAttributes().containsKey(this.sortKeyName.get())) {
@@ -556,6 +563,19 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             logger.trace("Sleeping for a refresh period of " + refreshPeriodInMilliseconds + " ms");
             Thread.sleep(refreshPeriodInMilliseconds);
         }
+    }
+
+    /**
+     * Returns true if the client currently owns the lock with {@param key} and {@param sortKey}. It returns false otherwise.
+     *
+     * @param key     The partition key representing the lock.
+     * @param sortKey The sort key if present.
+     * @return true if the client owns the lock. It returns false otherwise.
+     */
+    public boolean hasLock(final String key, final Optional<String> sortKey) {
+        Objects.requireNonNull(sortKey, "Sort Key must not be null (can be Optional.empty())");
+        final LockItem localLock = this.locks.get(key + sortKey.orElse(""));
+        return localLock != null && !localLock.isExpired();
     }
 
     private LockItem upsertAndMonitorExpiredLock(AcquireLockOptions options, String key, Optional<String> sortKey, boolean deleteLockOnRelease,
