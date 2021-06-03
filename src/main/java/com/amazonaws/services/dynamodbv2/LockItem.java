@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
 import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
 import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
+import java.util.concurrent.atomic.AtomicReference;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 /**
@@ -38,7 +39,7 @@ public class LockItem implements Closeable {
     private final String partitionKey;
     private final Optional<String> sortKey;
 
-    private final Optional<ByteBuffer> data;
+    private final AtomicReference<ByteBuffer> data;
     private final String ownerName;
     private final boolean deleteLockItemOnClose;
     private final boolean isReleased;
@@ -83,7 +84,7 @@ public class LockItem implements Closeable {
         this.client = client;
         this.partitionKey = partitionKey;
         this.sortKey = sortKey;
-        this.data = data;
+        this.data = new AtomicReference<>(data.orElse(null));
         this.ownerName = ownerName;
         this.deleteLockItemOnClose = deleteLockItemOnClose;
 
@@ -118,7 +119,7 @@ public class LockItem implements Closeable {
      * @return Returns the data associated with the lock, which is optional.
      */
     public Optional<ByteBuffer> getData() {
-        return this.data;
+        return Optional.ofNullable(this.data.get());
     }
 
     /**
@@ -292,6 +293,14 @@ public class LockItem implements Closeable {
         this.recordVersionNumber.replace(0, recordVersionNumber.length(), recordVersionNumber);
         this.lookupTime.set(lastUpdateOfLock);
         this.leaseDuration.set(leaseDurationToEnsureInMilliseconds);
+    }
+
+    /*
+     * Updates the data of the lock. This method is package private -- it should only be called by the lock
+     * client.
+     */
+    void updateData(ByteBuffer byteBuffer) {
+        this.data.set(byteBuffer);
     }
 
     /**

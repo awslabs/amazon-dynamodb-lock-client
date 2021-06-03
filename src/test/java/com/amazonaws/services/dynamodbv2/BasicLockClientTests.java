@@ -1047,7 +1047,8 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         this.lockClient.sendHeartbeat(SendHeartbeatOptions.builder(item).withData(ByteBuffer.wrap(data2.getBytes())).build());
         assertEquals(data2, byteBufferToString(this.lockClient.getLockFromDynamoDB(
                 GetLockOptions.builder("testKey1").build()).get().getData().get()));
-
+        assertEquals(data2, byteBufferToString(this.lockClient.getLock(
+            "testKey1", Optional.empty()).get().getData().get()));
         item.close();
     }
 
@@ -1063,7 +1064,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         assertEquals(data, byteBufferToString(this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DELETE_ON_RELEASE).get().getData().get()));
         this.lockClient.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(true).build());
         assertEquals(Optional.empty(), this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DELETE_ON_RELEASE).get().getData());
-
+        assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()).get().getData());
         item.close();
     }
 
