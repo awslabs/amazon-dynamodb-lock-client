@@ -333,7 +333,7 @@ public class AcquireLockOptions {
             }
             return new AcquireLockOptions(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease, this.acquireOnlyIfLockAlreadyExists,
                     this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit, this.additionalAttributes, sessionMonitor,
-                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, reentrant);
+                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
         }
 
         @Override
@@ -341,7 +341,8 @@ public class AcquireLockOptions {
             return "AcquireLockOptions.AcquireLockOptionsBuilder(key=" + this.partitionKey + ", sortKey=" + this.sortKey + ", data=" + this.data + ", replaceData="
                 + this.replaceData + ", deleteLockOnRelease=" + this.deleteLockOnRelease + ", refreshPeriod=" + this.refreshPeriod + ", additionalTimeToWaitForLock="
                 + this.additionalTimeToWaitForLock + ", timeUnit=" + this.timeUnit + ", additionalAttributes=" + this.additionalAttributes + ", safeTimeWithoutHeartbeat="
-                + this.safeTimeWithoutHeartbeat + ", sessionMonitorCallback=" + this.sessionMonitorCallback + ", acquireReleasedLocksConsistently=" + this.acquireReleasedLocksConsistently + ")";
+                + this.safeTimeWithoutHeartbeat + ", sessionMonitorCallback=" + this.sessionMonitorCallback + ", acquireReleasedLocksConsistently="
+                + this.acquireReleasedLocksConsistently + ", reentrant=" + this.reentrant+ ")";
         }
     }
 
