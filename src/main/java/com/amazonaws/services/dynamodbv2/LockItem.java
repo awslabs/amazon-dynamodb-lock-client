@@ -39,7 +39,7 @@ public class LockItem implements Closeable {
     private final String partitionKey;
     private final Optional<String> sortKey;
 
-    private final AtomicReference<ByteBuffer> data;
+    private ByteBuffer data;
     private final String ownerName;
     private final boolean deleteLockItemOnClose;
     private final boolean isReleased;
@@ -84,7 +84,7 @@ public class LockItem implements Closeable {
         this.client = client;
         this.partitionKey = partitionKey;
         this.sortKey = sortKey;
-        this.data = new AtomicReference<>(data.orElse(null));
+        this.data = data.orElse(null);
         this.ownerName = ownerName;
         this.deleteLockItemOnClose = deleteLockItemOnClose;
 
@@ -119,7 +119,7 @@ public class LockItem implements Closeable {
      * @return Returns the data associated with the lock, which is optional.
      */
     public Optional<ByteBuffer> getData() {
-        return Optional.ofNullable(this.data.get());
+        return Optional.ofNullable(data);
     }
 
     /**
@@ -194,9 +194,10 @@ public class LockItem implements Closeable {
     @Override
     public String toString() {
         return String
-            .format("LockItem{Partition Key=%s, Sort Key=%s, Owner Name=%s, Lookup Time=%d, Lease Duration=%d, " + "Record Version Number=%s, Delete On Close=%s, Is Released=%s}",
+            .format("LockItem{Partition Key=%s, Sort Key=%s, Owner Name=%s, Lookup Time=%d, Lease Duration=%d, "
+                    + "Record Version Number=%s, Delete On Close=%s, Data=%s, Is Released=%s}",
                 this.partitionKey, this.sortKey, this.ownerName, this.lookupTime.get(), this.leaseDuration.get(), this.recordVersionNumber, this.deleteLockItemOnClose,
-                this.isReleased);
+                this.data, this.isReleased);
     }
 
     /**
@@ -300,7 +301,7 @@ public class LockItem implements Closeable {
      * client.
      */
     void updateData(ByteBuffer byteBuffer) {
-        this.data.set(byteBuffer);
+        this.data = byteBuffer;
     }
 
     /**

@@ -1141,11 +1141,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 final long lastUpdateOfLock = LockClientUtils.INSTANCE.millisecondTime();
                 this.dynamoDB.updateItem(updateItemRequest);
                 lockItem.updateRecordVersionNumber(recordVersionNumber, lastUpdateOfLock, leaseDurationToEnsureInMilliseconds);
-                if (deleteData) {
-                    lockItem.updateData(null);
-                } else if (options.getData().isPresent()) {
-                    lockItem.updateData(options.getData().get());
-                }
+                lockItem.updateData(options.getData().orElse(null));
             } catch (final ConditionalCheckFailedException conditionalCheckFailedException) {
                 logger.debug("Someone else acquired the lock, so we will stop heartbeating it", conditionalCheckFailedException);
                 this.locks.remove(lockItem.getUniqueIdentifier());
