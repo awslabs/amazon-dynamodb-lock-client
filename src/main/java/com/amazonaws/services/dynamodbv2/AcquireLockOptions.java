@@ -459,7 +459,8 @@ public class AcquireLockOptions {
                 && Objects.equals(this.sessionMonitor, otherOptions.sessionMonitor)
                 && Objects.equals(this.updateExistingLockRecord, otherOptions.updateExistingLockRecord)
                 && Objects.equals(this.shouldSkipBlockingWait, otherOptions.shouldSkipBlockingWait)
-                && Objects.equals(this.acquireReleasedLocksConsistently, otherOptions.acquireReleasedLocksConsistently);
+                && Objects.equals(this.acquireReleasedLocksConsistently, otherOptions.acquireReleasedLocksConsistently)
+                && Objects.equals(this.reentrant, otherOptions.reentrant);
     }
 
     @Override
@@ -467,7 +468,7 @@ public class AcquireLockOptions {
         return Objects.hash(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease,
                 this.acquireOnlyIfLockAlreadyExists, this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit,
                 this.additionalAttributes, this.sessionMonitor, this.updateExistingLockRecord,
-                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently);
+                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
 
     }
 

@@ -236,6 +236,37 @@ public class AmazonDynamoDBLockClientTest {
     }
 
     @Test
+    public void acquireLock_withReentrant_doesNotFailIfHoldingLock() throws InterruptedException {
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        Map<String, AttributeValue> differentRvn1 = new HashMap<>(item);
+        differentRvn1.put("recordVersionNumber",
+            AttributeValue.builder().s("uuid1").build());
+        Map<String, AttributeValue> differentRvn2 = new HashMap<>(item);
+        differentRvn2.put("recordVersionNumber",
+            AttributeValue.builder().s("uuid2").build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(item).build())
+            .thenReturn(GetItemResponse.builder().item(item).build())
+            .thenReturn(GetItemResponse.builder().item(differentRvn1).build())
+            .thenReturn(GetItemResponse.builder().item(differentRvn2).build());
+        String partitionKey = "asdf";
+        LockItem lockItem1 = client.acquireLock(AcquireLockOptions.builder(partitionKey).build());
+        assertNotNull(lockItem1);
+        assertEquals(partitionKey, lockItem1.getPartitionKey());
+
+        LockItem lockItem2 = client.acquireLock(AcquireLockOptions.builder(partitionKey)
+            .withReentrant(true).build());
+        assertNotNull(lockItem2);
+        assertEquals(partitionKey, lockItem2.getPartitionKey());
+    }
+
+    @Test
     public void acquireLock_whenLockAlreadyExistsAndIsNotReleased_andWhenHaveSleptForMinimumLeaseDurationTime_skipsAddingLeaseDuration()
         throws InterruptedException {
         UUID uuid = setOwnerNameToUuid();
