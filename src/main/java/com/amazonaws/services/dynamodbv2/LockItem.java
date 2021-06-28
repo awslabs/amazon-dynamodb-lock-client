@@ -14,19 +14,18 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
+import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
+import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-
-import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
-import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
-import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
-import java.util.concurrent.atomic.AtomicReference;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 /**
@@ -39,7 +38,7 @@ public class LockItem implements Closeable {
     private final String partitionKey;
     private final Optional<String> sortKey;
 
-    private ByteBuffer data;
+    private Optional<ByteBuffer> data;
     private final String ownerName;
     private final boolean deleteLockItemOnClose;
     private final boolean isReleased;
@@ -84,7 +83,7 @@ public class LockItem implements Closeable {
         this.client = client;
         this.partitionKey = partitionKey;
         this.sortKey = sortKey;
-        this.data = data.orElse(null);
+        this.data = data;
         this.ownerName = ownerName;
         this.deleteLockItemOnClose = deleteLockItemOnClose;
 
@@ -119,7 +118,7 @@ public class LockItem implements Closeable {
      * @return Returns the data associated with the lock, which is optional.
      */
     public Optional<ByteBuffer> getData() {
-        return Optional.ofNullable(data);
+        return this.data;
     }
 
     /**
@@ -193,11 +192,14 @@ public class LockItem implements Closeable {
      */
     @Override
     public String toString() {
+        String dataString = this.data
+            .map(byteBuffer -> new String(byteBuffer.array(), StandardCharsets.UTF_8))
+            .orElse("");
         return String
             .format("LockItem{Partition Key=%s, Sort Key=%s, Owner Name=%s, Lookup Time=%d, Lease Duration=%d, "
                     + "Record Version Number=%s, Delete On Close=%s, Data=%s, Is Released=%s}",
                 this.partitionKey, this.sortKey, this.ownerName, this.lookupTime.get(), this.leaseDuration.get(), this.recordVersionNumber, this.deleteLockItemOnClose,
-                this.data, this.isReleased);
+                dataString, this.isReleased);
     }
 
     /**
@@ -301,7 +303,7 @@ public class LockItem implements Closeable {
      * client.
      */
     void updateData(ByteBuffer byteBuffer) {
-        this.data = byteBuffer;
+        this.data = Optional.ofNullable(byteBuffer);
     }
 
     /**

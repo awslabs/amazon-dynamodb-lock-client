@@ -14,9 +14,12 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
+import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
+import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
+import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -24,17 +27,10 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
-
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
-
-import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
-import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
-import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
-import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
-import org.powermock.api.mockito.PowerMockito;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -1475,7 +1471,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     public void testLockItemToString() throws LockNotGrantedException, InterruptedException {
         final LockItem lockItem = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
         final Pattern p = Pattern.compile("LockItem\\{Partition Key=testKey1, Sort Key=Optional.empty, Owner Name=" + INTEGRATION_TESTER + ", Lookup Time=\\d+, Lease Duration=3000, "
-            + "Record Version Number=\\w+-\\w+-\\w+-\\w+-\\w+, Delete On Close=true, Is Released=false\\}");
+            + "Record Version Number=\\w+-\\w+-\\w+-\\w+-\\w+, Delete On Close=true, Data=" + TEST_DATA + ", Is Released=false\\}");
         assertTrue(p.matcher(lockItem.toString()).matches());
     }
 
