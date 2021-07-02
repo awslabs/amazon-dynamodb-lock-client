@@ -14,18 +14,18 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
+import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
+import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-
-import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
-import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
-import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 /**
@@ -38,7 +38,7 @@ public class LockItem implements Closeable {
     private final String partitionKey;
     private final Optional<String> sortKey;
 
-    private final Optional<ByteBuffer> data;
+    private Optional<ByteBuffer> data;
     private final String ownerName;
     private final boolean deleteLockItemOnClose;
     private final boolean isReleased;
@@ -192,10 +192,14 @@ public class LockItem implements Closeable {
      */
     @Override
     public String toString() {
+        String dataString = this.data
+            .map(byteBuffer -> new String(byteBuffer.array(), StandardCharsets.UTF_8))
+            .orElse("");
         return String
-            .format("LockItem{Partition Key=%s, Sort Key=%s, Owner Name=%s, Lookup Time=%d, Lease Duration=%d, " + "Record Version Number=%s, Delete On Close=%s, Is Released=%s}",
+            .format("LockItem{Partition Key=%s, Sort Key=%s, Owner Name=%s, Lookup Time=%d, Lease Duration=%d, "
+                    + "Record Version Number=%s, Delete On Close=%s, Data=%s, Is Released=%s}",
                 this.partitionKey, this.sortKey, this.ownerName, this.lookupTime.get(), this.leaseDuration.get(), this.recordVersionNumber, this.deleteLockItemOnClose,
-                this.isReleased);
+                dataString, this.isReleased);
     }
 
     /**
@@ -292,6 +296,14 @@ public class LockItem implements Closeable {
         this.recordVersionNumber.replace(0, recordVersionNumber.length(), recordVersionNumber);
         this.lookupTime.set(lastUpdateOfLock);
         this.leaseDuration.set(leaseDurationToEnsureInMilliseconds);
+    }
+
+    /*
+     * Updates the data of the lock. This method is package private -- it should only be called by the lock
+     * client.
+     */
+    void updateData(ByteBuffer byteBuffer) {
+        this.data = Optional.ofNullable(byteBuffer);
     }
 
     /**

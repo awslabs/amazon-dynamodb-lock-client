@@ -440,6 +440,25 @@ public class AmazonDynamoDBLockClientTest {
     }
 
     @Test
+    public void sendHeartbeat_whenNotExpired_andSameOwner_releasedFalse_deleteDataFalse_updatesData() {
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+        long lastUpdatedTimeInMilliseconds = Long.MAX_VALUE;
+        String partitionKey = "partition_key";
+        LockItem item = new LockItem(client, partitionKey, Optional.empty(), Optional.of(ByteBuffer.wrap("data1".getBytes())),
+            false, uuid.toString(), 1L, lastUpdatedTimeInMilliseconds,
+            "rvn", false, Optional.empty(), null);
+        assertTrue(item.getData().isPresent());
+        ByteBuffer updated = ByteBuffer.wrap("data2".getBytes());
+        client.sendHeartbeat(SendHeartbeatOptions.builder(item)
+            .withDeleteData(null)
+            .withData(updated)
+            .build());
+        assertTrue(item.getData().isPresent());
+        assertEquals(updated, item.getData().get());
+    }
+
+    @Test
     public void sendHeartbeat_whenServiceUnavailable_andHoldLockOnServiceUnavailableFalse_thenDoNotUpdateLookupTime() throws LockNotGrantedException {
         AwsServiceException serviceUnavailableException = AwsServiceException.builder().message("Service Unavailable.")
                 .awsErrorDetails(AwsErrorDetails.builder().sdkHttpResponse(SdkHttpResponse.builder().statusCode(HttpStatusCode.SERVICE_UNAVAILABLE).build()).build()).build();
