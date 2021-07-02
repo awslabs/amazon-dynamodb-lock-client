@@ -44,6 +44,7 @@ public class AcquireLockOptions {
     private final Boolean updateExistingLockRecord;
     private final Boolean acquireReleasedLocksConsistently;
     private final Optional<SessionMonitor> sessionMonitor;
+    private final Boolean reentrant;
 
     /**
      * Setting this flag to true will prevent the thread from being blocked (put to sleep) for the lease duration and
@@ -70,6 +71,7 @@ public class AcquireLockOptions {
         private Map<String, AttributeValue> additionalAttributes;
         private Boolean updateExistingLockRecord;
         private Boolean acquireReleasedLocksConsistently;
+        private Boolean reentrant;
 
         private long safeTimeWithoutHeartbeat;
         private Optional<Runnable> sessionMonitorCallback;
@@ -87,6 +89,7 @@ public class AcquireLockOptions {
             this.updateExistingLockRecord = false;
             this.shouldSkipBlockingWait = false;
             this.acquireReleasedLocksConsistently = false;
+            this.reentrant = false;
         }
 
         /**
@@ -241,6 +244,19 @@ public class AcquireLockOptions {
         }
 
         /**
+         * With this set to true, the lock client will check first if it already owns the lock. If it already owns the lock and the
+         * lock is not expired, it will return the lock immediately. If this is set to false and the client already owns the lock,
+         * the call to acquireLock will block.
+         *
+         * @param reentrant whether the lock client should not block if it already owns the lock
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AcquireLockOptionsBuilder withReentrant(final boolean reentrant) {
+            this.reentrant = reentrant;
+            return this;
+        }
+
+        /**
          * <p>
          * Registers a "SessionMonitor."
          * </p>
@@ -317,7 +333,7 @@ public class AcquireLockOptions {
             }
             return new AcquireLockOptions(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease, this.acquireOnlyIfLockAlreadyExists,
                     this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit, this.additionalAttributes, sessionMonitor,
-                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently);
+                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
         }
 
         @Override
@@ -325,7 +341,8 @@ public class AcquireLockOptions {
             return "AcquireLockOptions.AcquireLockOptionsBuilder(key=" + this.partitionKey + ", sortKey=" + this.sortKey + ", data=" + this.data + ", replaceData="
                 + this.replaceData + ", deleteLockOnRelease=" + this.deleteLockOnRelease + ", refreshPeriod=" + this.refreshPeriod + ", additionalTimeToWaitForLock="
                 + this.additionalTimeToWaitForLock + ", timeUnit=" + this.timeUnit + ", additionalAttributes=" + this.additionalAttributes + ", safeTimeWithoutHeartbeat="
-                + this.safeTimeWithoutHeartbeat + ", sessionMonitorCallback=" + this.sessionMonitorCallback + ", acquireReleasedLocksConsistently=" + this.acquireReleasedLocksConsistently + ")";
+                + this.safeTimeWithoutHeartbeat + ", sessionMonitorCallback=" + this.sessionMonitorCallback + ", acquireReleasedLocksConsistently="
+                + this.acquireReleasedLocksConsistently + ", reentrant=" + this.reentrant+ ")";
         }
     }
 
@@ -343,7 +360,7 @@ public class AcquireLockOptions {
     private AcquireLockOptions(final String partitionKey, final Optional<String> sortKey, final Optional<ByteBuffer> data, final Boolean replaceData,
        final Boolean deleteLockOnRelease, final Boolean acquireOnlyIfLockAlreadyExists, final Long refreshPeriod, final Long additionalTimeToWaitForLock,
        final TimeUnit timeUnit, final Map<String, AttributeValue> additionalAttributes, final Optional<SessionMonitor> sessionMonitor,
-       final Boolean updateExistingLockRecord, final Boolean shouldSkipBlockingWait, final Boolean acquireReleasedLocksConsistently) {
+       final Boolean updateExistingLockRecord, final Boolean shouldSkipBlockingWait, final Boolean acquireReleasedLocksConsistently, Boolean reentrant) {
        this.partitionKey = partitionKey;
        this.sortKey = sortKey;
        this.data = data;
@@ -358,7 +375,8 @@ public class AcquireLockOptions {
        this.updateExistingLockRecord = updateExistingLockRecord;
        this.shouldSkipBlockingWait = shouldSkipBlockingWait;
        this.acquireReleasedLocksConsistently = acquireReleasedLocksConsistently;
-   }
+       this.reentrant = reentrant;
+    }
 
     String getPartitionKey() {
         return this.partitionKey;
@@ -402,6 +420,10 @@ public class AcquireLockOptions {
         return this.timeUnit;
     }
 
+    Boolean getReentrant() {
+      return this.reentrant;
+    }
+
     Map<String, AttributeValue> getAdditionalAttributes() {
         return this.additionalAttributes;
     }
@@ -437,7 +459,8 @@ public class AcquireLockOptions {
                 && Objects.equals(this.sessionMonitor, otherOptions.sessionMonitor)
                 && Objects.equals(this.updateExistingLockRecord, otherOptions.updateExistingLockRecord)
                 && Objects.equals(this.shouldSkipBlockingWait, otherOptions.shouldSkipBlockingWait)
-                && Objects.equals(this.acquireReleasedLocksConsistently, otherOptions.acquireReleasedLocksConsistently);
+                && Objects.equals(this.acquireReleasedLocksConsistently, otherOptions.acquireReleasedLocksConsistently)
+                && Objects.equals(this.reentrant, otherOptions.reentrant);
     }
 
     @Override
@@ -445,7 +468,7 @@ public class AcquireLockOptions {
         return Objects.hash(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease,
                 this.acquireOnlyIfLockAlreadyExists, this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit,
                 this.additionalAttributes, this.sessionMonitor, this.updateExistingLockRecord,
-                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently);
+                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
 
     }
 
