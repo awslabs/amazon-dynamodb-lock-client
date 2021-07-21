@@ -63,6 +63,7 @@ import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
 import software.amazon.awssdk.services.dynamodb.model.KeyType;
 import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughputExceededException;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
@@ -141,6 +142,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private static final Set<TableStatus> availableStatuses;
     protected static final String SK_PATH_EXPRESSION_VARIABLE = "#sk";
     protected static final String PK_PATH_EXPRESSION_VARIABLE = "#pk";
+    protected static final String PK_VALUE_EXPRESSION_VARIABLE = ":pk";
     protected static final String NEW_RVN_VALUE_EXPRESSION_VARIABLE = ":newRvn";
     protected static final String LEASE_DURATION_PATH_VALUE_EXPRESSION_VARIABLE = "#ld";
     protected static final String LEASE_DURATION_VALUE_EXPRESSION_VARIABLE = ":ld";
@@ -214,6 +216,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     protected static final String UPDATE_LEASE_DURATION_AND_RVN_AND_DATA = String.format("%s, %s = %s",
         UPDATE_LEASE_DURATION_AND_RVN, DATA_PATH_EXPRESSION_VARIABLE, DATA_VALUE_EXPRESSION_VARIABLE);
     protected static final String REMOVE_IS_RELEASED_UPDATE_EXPRESSION = String.format(" REMOVE %s ", IS_RELEASED_PATH_EXPRESSION_VARIABLE);
+    protected static final String QUERY_PK_EXPRESSION = String.format("%s = %s", PK_PATH_EXPRESSION_VARIABLE, PK_VALUE_EXPRESSION_VARIABLE);
 
     static {
         availableStatuses = new HashSet<>();
@@ -1038,19 +1041,48 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      *                        when {@link LockItem#close()} is called on it.
      * @return A non parallel {@link Stream} of all the {@link LockItem}s in
      * DynamoDB. Note that the item can exist in the table even if it is
-     * released, as noted by @{link LockItem#isReleased()}.
+     * released, as noted by {@link LockItem#isReleased()}.
      */
     public Stream<LockItem> getAllLocksFromDynamoDB(final boolean deleteOnRelease) {
         final ScanRequest scanRequest = ScanRequest.builder().tableName(this.tableName).build();
         final LockItemPaginatedScanIterator iterator = new LockItemPaginatedScanIterator(this.dynamoDB, scanRequest, item -> {
             final String key = item.get(this.partitionKeyName).s();
-            GetLockOptionsBuilder options = GetLockOptions.builder(key).withDeleteLockOnRelease(deleteOnRelease);
-
-            options = this.sortKeyName.map(item::get).map(AttributeValue::s).map(options::withSortKey).orElse(options);
-
-            final LockItem lockItem = this.createLockItem(options.build(), item);
-            return lockItem;
+            return getLockItem(key, deleteOnRelease, item);
         });
+
+        final Iterable<LockItem> iterable = () -> iterator;
+        return StreamSupport.stream(iterable.spliterator(), false /*isParallelStream*/);
+    }
+
+    /**
+     * <p>
+     * Retrieves the locks with partition_key = {@code key}.
+     * </p>
+     * <p>
+     * Not that this may return a lock item even if it was released.
+     * </p>
+     *
+     * @param key the partition key
+     * @param deleteOnRelease Whether or not the {@link LockItem} should delete the item
+     *                        when {@link LockItem#close()} is called on it.
+     * @return A non parallel {@link Stream} of {@link LockItem}s that has the partition key in
+     * DynamoDB. Note that the item can exist in the table even if it is
+     * released, as noted by {@link LockItem#isReleased()}.
+     */
+    public Stream<LockItem> getLocksByPartitionKey(String key, final boolean deleteOnRelease) {
+        Map<String, String> expressionAttributeNames = new HashMap<>();
+        expressionAttributeNames.put(PK_PATH_EXPRESSION_VARIABLE, this.partitionKeyName);
+        Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
+        expressionAttributeValues.put(PK_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(key).build());
+        final QueryRequest queryRequest = QueryRequest.builder()
+            .tableName(this.tableName)
+            .keyConditionExpression(QUERY_PK_EXPRESSION)
+            .expressionAttributeNames(expressionAttributeNames)
+            .expressionAttributeValues(expressionAttributeValues)
+            .build();
+        final LockItemPaginatedQueryIterator
+            iterator = new LockItemPaginatedQueryIterator(
+            this.dynamoDB, queryRequest, item -> getLockItem(key, deleteOnRelease, item));
 
         final Iterable<LockItem> iterable = () -> iterator;
         return StreamSupport.stream(iterable.spliterator(), false /*isParallelStream*/);
@@ -1336,5 +1368,15 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 }
             }
         });
+    }
+
+    private LockItem getLockItem(String key, boolean deleteOnRelease,
+        Map<String, AttributeValue> item) {
+        GetLockOptionsBuilder options = GetLockOptions.builder(key).withDeleteLockOnRelease(deleteOnRelease);
+
+        options = this.sortKeyName.map(item::get).map(AttributeValue::s).map(options::withSortKey).orElse(options);
+
+        final LockItem lockItem = this.createLockItem(options.build(), item);
+        return lockItem;
     }
 }

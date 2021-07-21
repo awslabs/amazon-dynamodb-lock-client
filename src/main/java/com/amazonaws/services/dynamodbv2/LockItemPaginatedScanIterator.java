@@ -14,28 +14,20 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
-import static java.util.stream.Collectors.toList;
-
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Objects;
-
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
 
+import static java.util.stream.Collectors.toList;
+
 /**
  * Lazy-loaded. Not immutable. Not thread safe.
  */
-final class LockItemPaginatedScanIterator implements Iterator<LockItem> {
+final class LockItemPaginatedScanIterator extends LockItemPaginatedIterator {
     private final DynamoDbClient dynamoDB;
     private volatile ScanRequest scanRequest;
     private final LockItemFactory lockItemFactory;
-
-    private List<LockItem> currentPageResults = Collections.emptyList();
-    private int currentPageResultsIndex = 0;
 
     /**
      * Initially null to indicate that no pages have been loaded yet.
@@ -51,33 +43,7 @@ final class LockItemPaginatedScanIterator implements Iterator<LockItem> {
         this.lockItemFactory = Objects.requireNonNull(lockItemFactory, "lockItemFactory must not be null");
     }
 
-    @Override
-    public boolean hasNext() {
-        while (this.currentPageResultsIndex == this.currentPageResults.size() && this.hasAnotherPageToLoad()) {
-            this.loadNextPageIntoResults();
-        }
-
-        return this.currentPageResultsIndex < this.currentPageResults.size();
-    }
-
-    @Override
-    public LockItem next() throws NoSuchElementException {
-        if (!this.hasNext()) {
-            throw new NoSuchElementException();
-        }
-
-        final LockItem next = this.currentPageResults.get(this.currentPageResultsIndex);
-        this.currentPageResultsIndex++;
-
-        return next;
-    }
-
-    @Override
-    public void remove() throws UnsupportedOperationException {
-        throw new UnsupportedOperationException("This iterator is immutable.");
-    }
-
-    private boolean hasAnotherPageToLoad() {
+    protected boolean hasAnotherPageToLoad() {
         if (!this.hasLoadedFirstPage()) {
             return true;
         }
@@ -85,11 +51,11 @@ final class LockItemPaginatedScanIterator implements Iterator<LockItem> {
         return this.scanResponse.lastEvaluatedKey() != null && !this.scanResponse.lastEvaluatedKey().isEmpty();
     }
 
-    private boolean hasLoadedFirstPage() {
+    protected boolean hasLoadedFirstPage() {
         return this.scanResponse != null;
     }
 
-    private void loadNextPageIntoResults() {
+    protected void loadNextPageIntoResults() {
         this.scanResponse = this.dynamoDB.scan(this.scanRequest);
 
         this.currentPageResults = this.scanResponse.items().stream().map(this.lockItemFactory::create).collect(toList());
