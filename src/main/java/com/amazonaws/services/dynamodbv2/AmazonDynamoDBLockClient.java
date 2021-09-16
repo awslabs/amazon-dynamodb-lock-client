@@ -566,7 +566,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     }
 
     /**
-     * Returns true if the client currently owns the lock with {@param key} and {@param sortKey}. It returns false otherwise.
+     * Returns true if the client currently owns the lock with @param key and @param sortKey. It returns false otherwise.
      *
      * @param key     The partition key representing the lock.
      * @param sortKey The sort key if present.
