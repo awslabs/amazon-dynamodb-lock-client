@@ -2,14 +2,14 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.amazonaws</groupId>
     <artifactId>dynamodb-lock-client</artifactId>
-    <version>1.2.1</version>
+    <version>1.2.0</version>
     <packaging>jar</packaging>
     <name>Amazon DynamoDB Lock Client</name>
     <url>https://github.com/awslabs/dynamodb-lock-client</url>
     <description>The Amazon DynamoDB Lock Client is a general purpose distributed locking library built on DynamoDB.</description>
     <scm>
         <url>git@github.com:awslabs/dynamodb-lock-client.git</url>
-        <tag>1.2.1</tag>
+        <tag>1.2.0</tag>
     </scm>
     <properties>
         <!-- general properties -->
@@ -43,7 +43,7 @@
 
         <!-- test toolchain -->
         <junit.version>4.13.1</junit.version>
-        <log4j-core.version>2.14.1</log4j-core.version>
+        <log4j.version>1.2.17</log4j.version>
         <maven.surefire.version>3.0.0-M3</maven.surefire.version>
         <maven.failsafe.version>3.0.0-M3</maven.failsafe.version>
         <docker.maven.plugin.version>0.28.0</docker.maven.plugin.version>
@@ -194,9 +194,9 @@
             <version>${commons-logging.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-core</artifactId>
-            <version>${log4j-core.version}</version>
+            <groupId>log4j</groupId>
+            <artifactId>log4j</artifactId>
+            <version>${log4j.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
