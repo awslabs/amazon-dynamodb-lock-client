@@ -1,3 +1,17 @@
+/**
+ * Copyright 2013-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * <p>
+ * Licensed under the Amazon Software License (the "License").
+ * You may not use this file except in compliance with the License.
+ * A copy of the License is located at
+ * <p>
+ * http://aws.amazon.com/asl/
+ * <p>
+ * or in the "license" file accompanying this file. This file is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express
+ * or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
+ */
 package com.amazonaws.services.dynamodbv2;
 
 import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
@@ -15,6 +29,10 @@ import static java.util.stream.Collectors.toList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+/**
+ * Tests the features of the lock client that involve getting multiple locks
+ * from DynamoDB using a partition key.
+ */
 public class GetLocksByPartitionKeyTest extends InMemoryLockClientTester {
   /**
    * <p>1 MB</p>
@@ -38,7 +56,7 @@ public class GetLocksByPartitionKeyTest extends InMemoryLockClientTester {
     final List<LockItem>
         locksWithPartitionKey = this.lockClientForRangeKeyTable.getLocksByPartitionKey("test", deleteOnRelease).collect(toList());
 
-    assertEquals(Collections.emptyList(), locksWithPartitionKey);
+    assertTrue(locksWithPartitionKey.isEmpty());
   }
 
   @Test
@@ -51,11 +69,11 @@ public class GetLocksByPartitionKeyTest extends InMemoryLockClientTester {
     final LockItem singleLock = this.lockClientForRangeKeyTable.acquireLock(options);
 
     final boolean deleteOnRelease = false;
-    List<LockItem> locksWithParitionKey = this.lockClientForRangeKeyTable.getLocksByPartitionKey(partitionKey, deleteOnRelease).collect(toList());
+    List<LockItem> locksWithPartitionKey = this.lockClientForRangeKeyTable.getLocksByPartitionKey(partitionKey, deleteOnRelease).collect(toList());
 
-    assertEquals(1, locksWithParitionKey.size());
+    assertEquals(1, locksWithPartitionKey.size());
 
-    final LockItem retrievedLock = locksWithParitionKey.get(0);
+    final LockItem retrievedLock = locksWithPartitionKey.get(0);
     assertEquals(singleLock.getPartitionKey(), retrievedLock.getPartitionKey());
     assertEquals(singleLock.getSortKey(), retrievedLock.getSortKey());
     assertTrue(
@@ -64,12 +82,28 @@ public class GetLocksByPartitionKeyTest extends InMemoryLockClientTester {
 
     this.lockClientForRangeKeyTable.getLock(partitionKey, Optional.of(sortKey)).get().close();
 
-    locksWithParitionKey = this.lockClientForRangeKeyTable.getLocksByPartitionKey(partitionKey, deleteOnRelease).collect(toList());
-    assertEquals(Collections.emptyList(), locksWithParitionKey);
+    locksWithPartitionKey = this.lockClientForRangeKeyTable.getLocksByPartitionKey(partitionKey, deleteOnRelease).collect(toList());
+    assertTrue(locksWithPartitionKey.isEmpty());
   }
 
   @Test
-  public void getLocksFromDynamoDB_whenMultipleLocks_shouldReturnMultipleLocks() throws LockNotGrantedException, InterruptedException, IOException {
+  public void getLocksFromDynamoDB_whenNoPartitionKeyMatches_shouldReturnEmpty() throws LockNotGrantedException, InterruptedException {
+    final String partitionKey = "Test 1";
+    final String sortKey = "1";
+    final AcquireLockOptions options = AcquireLockOptions.builder(partitionKey)
+        .withSortKey(sortKey).withData(ByteBuffer.wrap(TEST_DATA.getBytes())).withDeleteLockOnRelease(true).build();
+
+    final LockItem singleLock = this.lockClientForRangeKeyTable.acquireLock(options);
+
+    final boolean deleteOnRelease = false;
+    final String differentPartitionKey = partitionKey + "_different";
+    List<LockItem> locksWithPartitionKey = this.lockClientForRangeKeyTable.getLocksByPartitionKey(differentPartitionKey, deleteOnRelease).collect(toList());
+
+    assertTrue(locksWithPartitionKey.isEmpty());
+  }
+
+  @Test
+  public void getLocksFromDynamoDB_whenMultipleLocks_shouldReturnMultipleLocks() throws LockNotGrantedException, InterruptedException {
     final String partitionKey = "Test 1";
     final AcquireLockOptions options1 = AcquireLockOptions.builder(partitionKey)
         .withSortKey("1").withData(ByteBuffer.wrap(TEST_DATA.getBytes())).withDeleteLockOnRelease(true).build();
@@ -112,22 +146,20 @@ public class GetLocksByPartitionKeyTest extends InMemoryLockClientTester {
     secondLock.close();
 
     allLocksFromDynamoDB = this.lockClientForRangeKeyTable.getLocksByPartitionKey(partitionKey, deleteOnRelease).collect(toList());
-    assertEquals(Collections.emptyList(), allLocksFromDynamoDB);
+    assertTrue(allLocksFromDynamoDB.isEmpty());
   }
 
   @Test
-  public void getLocksFromDynamoDB_whenMultiplePages_shouldReturnMultiplePages() throws LockNotGrantedException, InterruptedException, IOException {
-    // Scan is paginated.
-    // Scans with items that are larger than 1MB are paginated
-    // and must be retrieved by performing multiple scans.
+  public void getLocksFromDynamoDB_whenMultiplePages_shouldReturnCompleteResults() throws LockNotGrantedException, InterruptedException {
+    // Query is paginated.
+    // Queries with items that are larger than 1MB are paginated
+    // and must be retrieved by performing multiple queries.
     // Make sure the client handles pagination correctly.
     // See
     // http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#Pagination
     final String partitionKey = "Test 1";
     int numBytesOfData = 0;
     final byte[] data = new byte[(DYNAMODB_MAX_ITEM_SIZE_IN_BYTES * 9) / 10];
-    final long randomSeed = System.currentTimeMillis();
-    System.out.println("Random seed is " + randomSeed);
     final Map<String, LockItem> acquiredLockItemsByKey = new HashMap<>();
     while (numBytesOfData < DYNAMODB_MAX_PAGE_SIZE_IN_BYTES) {
       SECURE_RANDOM.nextBytes(data);
