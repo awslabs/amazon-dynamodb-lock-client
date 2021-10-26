@@ -154,9 +154,7 @@ public class LockItemPaginatedQueryIteratorTest extends TestCase {
     HashMap<String, AttributeValue> lastEvaluatedKey = new HashMap<>();
     lastEvaluatedKey.put("has_next", null);
     LockItem mock1 = mock(LockItem.class);
-    when(mock1.getOwnerName()).thenReturn("1");
     LockItem mock2 = mock(LockItem.class);
-    when(mock2.getOwnerName()).thenReturn("2");
 
     // Single item pages only to simulate multiple pages.
     when(factory.create(any())).thenReturn(mock1).thenReturn(mock2);
@@ -187,9 +185,7 @@ public class LockItemPaginatedQueryIteratorTest extends TestCase {
     page1.add(lockItem2);
 
     LockItem mock1 = mock(LockItem.class);
-    when(mock1.getOwnerName()).thenReturn("1");
     LockItem mock2 = mock(LockItem.class);
-    when(mock2.getOwnerName()).thenReturn("2");
 
     // Multiple items in one page.
     when(factory.create(any())).thenReturn(mock1).thenReturn(mock2);
