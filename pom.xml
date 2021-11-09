@@ -342,7 +342,7 @@
                         <configuration>
                             <dataFile>${jacoco-aggregate-destFile}</dataFile>
                             <rules>
-                                <rule>
+                                <rule >
                                     <element>CLASS</element>
                                     <limits>
                                         <limit>
