@@ -78,8 +78,23 @@ public class LockClientExample {
         client.close();
     }
 }
-
 ```
+
+#### Permissions
+The following permissions are required in order to use the AmazonDynamoDBLockClient to acquire or release a lock:
+- `dynamodb:DeleteItem`
+- `dynamodb:GetItem`
+- `dynamodb:PutItem`
+- `dynamodb:Scan`
+- `dynamodb:UpdateItem`
+
+If you also create a table using `AmazonDynamoDBLockClient.createLockTableInDynamoDB`, you need these permissions:
+- `dynamodb:CreateTable`
+
+If you want to ensure a table exists using `AmazonDynamoDBLockClient.assertLockTableExists` or
+`AmazonDynamoDBLockClient.lockTableExists`, the following permissions are necessary as well:
+- `dynamodb:DescribeTable`
+
 
 ## Selected Features
 ### Send Automatic Heartbeats
@@ -122,7 +137,7 @@ minutes in our case). If the lock is already being held by other worker. This es
 used to process other messages in the queue.
 
 So we introduced an optional behavior which offers a Non-Blocking acquire lock implementation. While trying to acquire
-lock, The client can now optionally set ```shouldSkipBlockingWait = true ``` to prevent the user thread from being
+lock, the client can now optionally set `shouldSkipBlockingWait = true` to prevent the user thread from being
 blocked until the lease duration, if the lock has already been held by another worker and has not been released yet.
 The caller can chose to immediately retry the lock acquisition or to back off and retry the lock acquisition, if lock is
 currently unavailable.
@@ -162,4 +177,9 @@ To run all integration tests for the DynamoDB Lock client, issue the following M
 
 ```bash
 mvn clean install -Pintegration-tests
+```
+
+# External release to Sonatype
+```bash
+mvn deploy -Possrh-release
 ```
