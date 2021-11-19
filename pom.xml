@@ -49,7 +49,7 @@
         <maven.failsafe.version>3.0.0-M3</maven.failsafe.version>
         <docker.maven.plugin.version>0.28.0</docker.maven.plugin.version>
         <build.profile.id>dev</build.profile.id>
-        <integration-test.category>*/BasicLockClientTests.java,*/GetAllLocksTests.java,*/ConsistentLockDataStressTest.java</integration-test.category>
+        <integration-test.category>*/BasicLockClientTests.java,*/GetAllLocksTests.java,*/GetLocksByPartitionKeyTest.java,*/ConsistentLockDataStressTest.java</integration-test.category>
 
         <!-- code quality tools -->
         <maven.checkstyle.plugin.version>3.0.0</maven.checkstyle.plugin.version>
@@ -348,12 +348,12 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>90</minimum>
+                                            <minimum>.5</minimum>
                                         </limit>
                                         <limit>
                                             <counter>BRANCH</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>90</minimum>
+                                            <minimum>.5</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
