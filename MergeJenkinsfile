@@ -1,0 +1,43 @@
+properties(
+    [
+        buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '20'))
+    ]
+)
+
+node('dev') {
+
+    testContainer = docker.image('maven:3.6.1-jdk-11').inside('-u root --network=host') {
+
+        def SCM_CHECKOUT = checkout scm
+        def server = Artifactory.server 'Artifactory'
+        def mvn = Artifactory.newMavenBuild()
+        def releaseRepoName = 'authgateway-releases'
+        def CONTAINER_MAVEN_HOME = sh(script: 'echo $MAVEN_HOME', returnStdout: true).trim()
+        env.MAVEN_HOME = CONTAINER_MAVEN_HOME
+
+        mvn.resolver releaseRepo: 'public', snapshotRepo: 'public', server: server
+        mvn.deployer releaseRepo: 'authgateway-releases', snapshotRepo: 'authgateway-snapshots', server: server
+
+        stage('Prepare') {
+            def commitMessage = sh(script: "git log -1 --pretty=%B", returnStdout: true).trim()
+            def COMMITISH = "${SCM_CHECKOUT.GIT_COMMIT}".substring(0, 7)
+            def verDate = new Date().format("yyMMdd")
+            env.ARTIFACT_VERSION = String.format("RC-%s-ag-dynamodb-lock-client-%s.%s", COMMITISH, verDate, env.BUILD_NUMBER)
+            buildName "${env.BUILD_NUMBER}) ${env.ARTIFACT_VERSION}"
+            buildDescription "${env.ARTIFACT_VERSION}. \nChange Author: ${env.CHANGE_AUTHOR}"
+        }
+
+        stage('Build & Test') {
+            mvn.run pom: 'pom.xml', goals: 'clean compile test'
+            junit allowEmptyResults: true, testResults: 'build/**/TEST-*.xml'
+        }
+
+        stage("Artifactory Deploy") {
+            buildInfo = mvn.run pom: 'pom.xml', goals: '-Dmaven.test.skip=true clean install'
+            buildInfo.env.capture = true
+            buildInfo.name = "authgateway-dynamodb-lock-client:${env.BRANCH_NAME}"
+            mvn.deployer.deployArtifacts buildInfo
+            server.publishBuildInfo buildInfo
+        }
+    }
+}

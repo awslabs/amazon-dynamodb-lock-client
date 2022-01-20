@@ -1,0 +1,32 @@
+properties(
+    [
+        buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '20'))
+    ]
+)
+
+node('dev') {
+    checkout scm
+
+    testContainer = docker.image('maven:3.6.1-jdk-11').inside('-u root --network=host') {
+
+        def server = Artifactory.server 'Artifactory'
+        def mvn = Artifactory.newMavenBuild()
+        def buildInfo = Artifactory.newBuildInfo()
+        def CONTAINER_MAVEN_HOME = sh(script: 'echo $MAVEN_HOME', returnStdout: true).trim()
+        env.MAVEN_HOME = CONTAINER_MAVEN_HOME
+
+        mvn.resolver releaseRepo: 'public', snapshotRepo: 'public', server: server
+
+        stage('Prepare QFT Tests') {
+            buildInfo.env.capture = true
+            buildInfo.name = "authgateway-dynamodb-lock-client:${env.BRANCH_NAME}"
+            buildName "${env.BUILD_NUMBER}) ${env.CHANGE_BRANCH}"
+            buildDescription "${env.BRANCH_NAME}"
+        }
+
+        stage('Build & Test') {
+            mvn.run pom: 'pom.xml', goals: 'clean compile test'
+            junit allowEmptyResults: true, testResults: 'build/**/TEST-*.xml'
+        }
+    }
+}
