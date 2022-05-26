@@ -21,8 +21,8 @@
         <jdk.version>1.8</jdk.version>
 
         <!-- build toolchain -->
-        <maven.assembly.plugin.version>3.1.1</maven.assembly.plugin.version>
-        <maven.compiler.plugin.version>3.8.0</maven.compiler.plugin.version>
+        <maven.assembly.plugin.version>3.3.0</maven.assembly.plugin.version>
+        <maven.compiler.plugin.version>3.9.0</maven.compiler.plugin.version>
         <maven.dependency.plugin.version>3.1.1</maven.dependency.plugin.version>
         <maven.enforcer.plugin.version>3.0.0-M2</maven.enforcer.plugin.version>
         <maven.gpg.plugin.version>1.6</maven.gpg.plugin.version>
@@ -43,11 +43,11 @@
         <bytebuddy.version>1.9.3</bytebuddy.version>
 
         <!-- test toolchain -->
-        <junit.version>4.13.1</junit.version>
-        <log4j-core.version>2.17.1</log4j-core.version>
-        <maven.surefire.version>3.0.0-M3</maven.surefire.version>
-        <maven.failsafe.version>3.0.0-M3</maven.failsafe.version>
-        <docker.maven.plugin.version>0.28.0</docker.maven.plugin.version>
+        <junit.version>4.13.2</junit.version>
+        <log4j-core.version>2.17.2</log4j-core.version>
+        <maven.surefire.version>3.0.0-M5</maven.surefire.version>
+        <maven.failsafe.version>3.0.0-M5</maven.failsafe.version>
+        <docker.maven.plugin.version>0.38.1</docker.maven.plugin.version>
         <build.profile.id>dev</build.profile.id>
         <integration-test.category>*/BasicLockClientTests.java,*/GetAllLocksTests.java,*/GetLocksByPartitionKeyTest.java,*/ConsistentLockDataStressTest.java</integration-test.category>
 
@@ -60,6 +60,10 @@
         <jacoco-aggregate-destFile>${project.build.directory}/coverage-reports/aggregate.exec</jacoco-aggregate-destFile>
     </properties>
     <developers>
+        <developer>
+            <name>Chris Ryan</name>
+            <email>chrisryan@squareup.com</email>
+        </developer>
         <developer>
             <name>Justin Lin</name>
             <email>lnjus@amazon.com</email>
