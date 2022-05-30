@@ -814,7 +814,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     public Optional<LockItem> tryAcquireLock(final AcquireLockOptions options) throws InterruptedException {
         try {
             return Optional.of(this.acquireLock(options));
-        } catch (final LockNotGrantedException x) {
+        } catch (final LockNotGrantedException | LockCurrentlyUnavailableException x) {
             return Optional.empty();
         }
     }
