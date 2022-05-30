@@ -626,9 +626,17 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         }
     }
 
-    private LockItem upsertAndMonitorReleasedLock(AcquireLockOptions options, String key, Optional<String> sortKey, boolean
-                                                                                                                        deleteLockOnRelease, Optional<SessionMonitor> sessionMonitor, Optional<LockItem> existingLock, Optional<ByteBuffer>
-                                                                                                                                                                                                                           newLockData, Map<String, AttributeValue> item, String recordVersionNumber) {
+    private LockItem upsertAndMonitorReleasedLock(
+        AcquireLockOptions options, 
+        String key,
+        Optional<String> sortKey,
+        boolean deleteLockOnRelease,
+        Optional<SessionMonitor> sessionMonitor,
+        Optional<LockItem> existingLock,
+        Optional<ByteBuffer> newLockData,
+        Map<String, AttributeValue> item,
+        String recordVersionNumber
+    ) {
 
         final String conditionalExpression;
         final boolean updateExistingLockRecord = options.getUpdateExistingLockRecord();
@@ -712,9 +720,16 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      * @param recordVersionNumber the rvn to condition the PutItem call on.
      * @return a new monitored LockItem
      */
-    private LockItem upsertAndMonitorNewLock(AcquireLockOptions options, String key, Optional<String> sortKey,
-                                             boolean deleteLockOnRelease, Optional<SessionMonitor> sessionMonitor,
-                                             Optional<ByteBuffer> newLockData, Map<String, AttributeValue> item, String recordVersionNumber) {
+    private LockItem upsertAndMonitorNewLock(
+        AcquireLockOptions options,
+        String key,
+        Optional<String> sortKey,
+        boolean deleteLockOnRelease,
+        Optional<SessionMonitor> sessionMonitor,
+        Optional<ByteBuffer> newLockData,
+        Map<String, AttributeValue> item,
+        String recordVersionNumber
+    ) {
 
         final Map<String, String> expressionAttributeNames = new HashMap<>();
         expressionAttributeNames.put(PK_PATH_EXPRESSION_VARIABLE, this.partitionKeyName);
