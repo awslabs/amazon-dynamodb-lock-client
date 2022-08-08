@@ -512,9 +512,6 @@
                                                     <port>${dynamodb-local.port}:${dynamodb-local.port}</port>
                                                 </ports>
                                                 <wait>
-                                                    <!--<http>
-                                                        <url>${dynamodb-local.endpoint}/shell/</url>
-                                                    </http>-->
                                                     <time>5000</time>
                                                 </wait>
                                             </run>
