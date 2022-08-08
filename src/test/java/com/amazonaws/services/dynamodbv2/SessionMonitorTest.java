@@ -16,34 +16,32 @@ package com.amazonaws.services.dynamodbv2;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.powermock.api.mockito.PowerMockito.when;
+import static org.mockito.Mockito.when;
 
 import java.util.Optional;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.powermock.api.mockito.PowerMockito;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
+import org.mockito.Mockito;
+import org.mockito.junit.MockitoJUnitRunner;
 
 /**
  * SendHeartbeatOptions unit tests.
  *
  * @author <a href="mailto:amcp@amazon.co.jp">Alexander Patrikalakis</a> 2017-07-13
  */
-@RunWith(PowerMockRunner.class)
-@PrepareForTest({SessionMonitor.class})
+@RunWith(MockitoJUnitRunner.class)
 public class SessionMonitorTest {
     @Test
     public void isLeaseEnteringDangerZone_whenThereAreZeroOrLessMillisUntilEnterDangerZone_returnTrue() {
-        SessionMonitor sut = PowerMockito.spy(new SessionMonitor(1000, Optional.empty()));
+        SessionMonitor sut = Mockito.spy(new SessionMonitor(1000, Optional.empty()));
         when(sut.millisecondsUntilLeaseEntersDangerZone(25L)).thenReturn(0L);
         assertTrue(sut.isLeaseEnteringDangerZone(25L));
     }
 
     @Test
     public void isLeaseEnteringDangerZone_whenThereAreMoreThanZeroMillisUntilEnterDangerZone_returnFalse() {
-        SessionMonitor sut = PowerMockito.spy(new SessionMonitor(1000, Optional.empty()));
+        SessionMonitor sut = Mockito.spy(new SessionMonitor(1000, Optional.empty()));
         when(sut.millisecondsUntilLeaseEntersDangerZone(25L)).thenReturn(1L);
         assertFalse(sut.isLeaseEnteringDangerZone(25L));
     }

@@ -192,7 +192,7 @@ public class AcquireLockOptions {
          * @return a reference to this builder for fluent method chaining
          */
         public AcquireLockOptionsBuilder withAdditionalAttributes(final Map<String, AttributeValue> additionalAttributes) {
-            this.additionalAttributes = additionalAttributes;
+            this.additionalAttributes = new HashMap<>(additionalAttributes);
             return this;
         }
 

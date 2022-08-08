@@ -20,10 +20,7 @@ import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -127,7 +124,7 @@ public class LockItem implements Closeable {
      * @return The additional attributes that can optionally be stored alongside the lock.
      */
     public Map<String, AttributeValue> getAdditionalAttributes() {
-        return this.additionalAttributes;
+        return Collections.unmodifiableMap(this.additionalAttributes);
     }
 
 

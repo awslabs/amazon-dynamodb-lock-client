@@ -21,40 +21,39 @@
         <jdk.version>1.8</jdk.version>
 
         <!-- build toolchain -->
-        <maven.assembly.plugin.version>3.1.1</maven.assembly.plugin.version>
-        <maven.compiler.plugin.version>3.8.0</maven.compiler.plugin.version>
-        <maven.dependency.plugin.version>3.1.1</maven.dependency.plugin.version>
-        <maven.enforcer.plugin.version>3.0.0-M2</maven.enforcer.plugin.version>
-        <maven.gpg.plugin.version>1.6</maven.gpg.plugin.version>
-        <maven.javadoc.plugin.version>3.0.1</maven.javadoc.plugin.version>
-        <maven.resources.plugin.version>3.1.0</maven.resources.plugin.version>
-        <maven.source.plugin.version>3.0.1</maven.source.plugin.version>
+        <maven.assembly.plugin.version>3.4.2</maven.assembly.plugin.version>
+        <maven.compiler.plugin.version>3.10.1</maven.compiler.plugin.version>
+        <maven.dependency.plugin.version>3.3.0</maven.dependency.plugin.version>
+        <maven.enforcer.plugin.version>3.1.0</maven.enforcer.plugin.version>
+        <maven.gpg.plugin.version>3.0.1</maven.gpg.plugin.version>
+        <maven.javadoc.plugin.version>3.4.0</maven.javadoc.plugin.version>
+        <maven.resources.plugin.version>3.3.0</maven.resources.plugin.version>
+        <maven.source.plugin.version>3.2.1</maven.source.plugin.version>
+        <maven.pmd.plugin.version>3.17.0</maven.pmd.plugin.version>
 
         <!-- compile dependencies -->
-        <aws.java.sdk.version>2.3.5</aws.java.sdk.version>
+        <aws.java.sdk.version>2.17.243</aws.java.sdk.version>
         <netty.version>[4.1.59.Final,)</netty.version>
         <commons-logging.version>1.2</commons-logging.version>
 
         <!-- test dependencies -->
-        <dynamodblocal.version>1.11.119</dynamodblocal.version>
-        <mockito.version>2.23.0</mockito.version>
-        <powermock.version>2.0.0</powermock.version>
-        <hamcrest.version>1.3</hamcrest.version>
-        <bytebuddy.version>1.9.3</bytebuddy.version>
+        <dynamodblocal.version>1.18.0</dynamodblocal.version>
+        <mockito.version>4.6.1</mockito.version>
+        <hamcrest.version>2.2</hamcrest.version>
 
         <!-- test toolchain -->
-        <junit.version>4.13.1</junit.version>
-        <log4j-core.version>2.17.1</log4j-core.version>
-        <maven.surefire.version>3.0.0-M3</maven.surefire.version>
-        <maven.failsafe.version>3.0.0-M3</maven.failsafe.version>
-        <docker.maven.plugin.version>0.28.0</docker.maven.plugin.version>
+        <junit.version>4.13.2</junit.version>
+        <log4j-core.version>2.18.0</log4j-core.version>
+        <maven.surefire.version>3.0.0-M7</maven.surefire.version>
+        <maven.failsafe.version>3.0.0-M7</maven.failsafe.version>
+        <docker.maven.plugin.version>0.40.2</docker.maven.plugin.version>
         <build.profile.id>dev</build.profile.id>
         <integration-test.category>*/BasicLockClientTests.java,*/GetAllLocksTests.java,*/GetLocksByPartitionKeyTest.java,*/ConsistentLockDataStressTest.java</integration-test.category>
 
         <!-- code quality tools -->
-        <maven.checkstyle.plugin.version>3.0.0</maven.checkstyle.plugin.version>
-        <spotbugs-maven-plugin.version>3.1.10</spotbugs-maven-plugin.version>
-        <jacoco.version>0.8.2</jacoco.version>
+        <maven.checkstyle.plugin.version>3.1.2</maven.checkstyle.plugin.version>
+        <spotbugs-maven-plugin.version>4.7.1.1</spotbugs-maven-plugin.version>
+        <jacoco.version>0.8.8</jacoco.version>
         <jacoco.it.execution.data.file>${project.build.directory}/coverage-reports/jacoco-it.exec</jacoco.it.execution.data.file>
         <jacoco.ut.execution.data.file>${project.build.directory}/coverage-reports/jacoco-ut.exec</jacoco.ut.execution.data.file>
         <jacoco-aggregate-destFile>${project.build.directory}/coverage-reports/aggregate.exec</jacoco-aggregate-destFile>
@@ -133,11 +132,13 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>auth</artifactId>
             <version>${aws.java.sdk.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>regions</artifactId>
             <version>${aws.java.sdk.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
@@ -153,31 +154,6 @@
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.powermock</groupId>
-            <artifactId>powermock-core</artifactId>
-            <version>${powermock.version}</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <!--mockito-core pulls in 2.5 but powermock pulls in 2.4. exclude from powermock.-->
-                    <groupId>org.objenesis</groupId>
-                    <artifactId>objenesis</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.powermock</groupId>
-            <artifactId>powermock-api-mockito2</artifactId>
-            <version>${powermock.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.powermock</groupId>
-            <artifactId>powermock-module-junit4</artifactId>
-            <version>${powermock.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -219,7 +195,7 @@
             </dependency>
             <dependency>
                 <groupId>org.hamcrest</groupId>
-                <artifactId>hamcrest-core</artifactId>
+                <artifactId>hamcrest</artifactId>
                 <version>${hamcrest.version}</version>
             </dependency>
             <dependency>
@@ -236,18 +212,6 @@
                 <groupId>io.netty</groupId>
                 <artifactId>netty-handler</artifactId>
                 <version>${netty.version}</version>
-            </dependency>
-            <dependency>
-                <!--mockito-core pulls in 1.9.0 but powermock pulls in 1.9.3. force 1.9.3.-->
-                <groupId>net.bytebuddy</groupId>
-                <artifactId>byte-buddy-agent</artifactId>
-                <version>${bytebuddy.version}</version>
-            </dependency>
-            <dependency>
-                <!--mockito-core pulls in 1.9.0 but powermock pulls in 1.9.3. force 1.9.3.-->
-                <groupId>net.bytebuddy</groupId>
-                <artifactId>byte-buddy</artifactId>
-                <version>${bytebuddy.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -394,7 +358,10 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-pmd-plugin</artifactId>
-                <version>3.8</version>
+                <version>${maven.pmd.plugin.version}</version>
+                <configuration>
+                    <linkXRef>false</linkXRef>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
@@ -545,9 +512,6 @@
                                                     <port>${dynamodb-local.port}:${dynamodb-local.port}</port>
                                                 </ports>
                                                 <wait>
-                                                    <http>
-                                                        <url>${dynamodb-local.endpoint}/shell/</url>
-                                                    </http>
                                                     <time>5000</time>
                                                 </wait>
                                             </run>
