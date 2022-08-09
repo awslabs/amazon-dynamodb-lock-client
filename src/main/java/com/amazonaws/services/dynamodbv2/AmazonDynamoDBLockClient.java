@@ -627,7 +627,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     }
 
     private LockItem upsertAndMonitorReleasedLock(
-        AcquireLockOptions options, 
+        AcquireLockOptions options,
         String key,
         Optional<String> sortKey,
         boolean deleteLockOnRelease,

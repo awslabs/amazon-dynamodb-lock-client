@@ -24,12 +24,11 @@ package com.amazonaws.services.dynamodbv2.util;
 public enum LockClientUtils {
     INSTANCE;
     /**
-     * Calls System.nanoTime() and converts it to milliseconds. This is used by the lock client, since the lock client
-     * uses milliseconds as its base unit instead of nanoseconds.
+     * Calls System.currentTimeMillis().
      *
-     * @return the current time in milliseconds, but not since epoch. It is only useful for elapsed time, not absolute time.
+     * @return the current time in milliseconds.
      */
     public long millisecondTime() {
-        return System.nanoTime() / 1000000;
+        return System.currentTimeMillis();
     }
 }
