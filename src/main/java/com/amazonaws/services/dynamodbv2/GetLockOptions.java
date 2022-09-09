@@ -15,6 +15,7 @@
 package com.amazonaws.services.dynamodbv2;
 
 import java.util.Optional;
+import software.amazon.awssdk.metrics.MetricCollector;
 
 /**
  * Provides options for getting a lock when calling the getLock() method.
@@ -23,21 +24,31 @@ public class GetLockOptions {
     private final String partitionKey;
     private final Optional<String> sortKey;
     private final boolean deleteLockOnRelease;
+    private final Optional<MetricCollector> metricCollector;
+
 
 
     public static class GetLockOptionsBuilder {
         private String partitionKey;
         private Optional<String> sortKey;
         private boolean deleteLockOnRelease;
+        private Optional<MetricCollector> metricCollector;
+
 
         GetLockOptionsBuilder(final String partitionKey) {
             this.sortKey = Optional.empty();
             this.deleteLockOnRelease = false;
             this.partitionKey = partitionKey;
+            this.metricCollector = Optional.empty();
         }
 
         public GetLockOptionsBuilder withSortKey(final String sortKey) {
             this.sortKey = Optional.ofNullable(sortKey);
+            return this;
+        }
+
+        public GetLockOptionsBuilder withMetricCollector(final MetricCollector metricCollector) {
+            this.metricCollector = Optional.ofNullable(metricCollector);
             return this;
         }
 
@@ -47,12 +58,12 @@ public class GetLockOptions {
         }
 
         public GetLockOptions build() {
-            return new GetLockOptions(this.partitionKey, this.sortKey, this.deleteLockOnRelease);
+            return new GetLockOptions(this.partitionKey, this.sortKey, this.deleteLockOnRelease, this.metricCollector);
         }
 
         @Override
         public java.lang.String toString() {
-            return "GetLockOptions.GetLockOptionsBuilder(partitionKey=" + this.partitionKey + ", sortKey=" + this.sortKey + ", deleteLockOnRelease=" + this.deleteLockOnRelease + ")";
+            return "GetLockOptions.GetLockOptionsBuilder(partitionKey=" + this.partitionKey + ", sortKey=" + this.sortKey + ", deleteLockOnRelease=" + this.deleteLockOnRelease + ", metricCollector=" + this.metricCollector + ")";
         }
     }
 
@@ -69,10 +80,12 @@ public class GetLockOptions {
         return new GetLockOptionsBuilder(partitionKey);
     }
 
-    private GetLockOptions(final String key, final Optional<String> sortKey, final boolean deleteLockOnRelease) {
+    private GetLockOptions(final String key, final Optional<String> sortKey, final boolean deleteLockOnRelease,
+        final Optional<MetricCollector> metricCollector) {
         this.partitionKey = key;
         this.sortKey = sortKey;
         this.deleteLockOnRelease = deleteLockOnRelease;
+        this.metricCollector = metricCollector;
     }
 
     String getPartitionKey() {
@@ -85,5 +98,9 @@ public class GetLockOptions {
 
     boolean isDeleteLockOnRelease() {
         return this.deleteLockOnRelease;
+    }
+
+    Optional<MetricCollector> getMetricCollector() {
+        return metricCollector;
     }
 }

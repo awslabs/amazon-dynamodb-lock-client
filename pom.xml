@@ -1,6 +1,6 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>com.amazonaws</groupId>
+    <groupId>software.amazon.awssdk</groupId>
     <artifactId>dynamodb-lock-client</artifactId>
     <version>1.2.0</version>
     <packaging>jar</packaging>
@@ -31,7 +31,7 @@
         <maven.source.plugin.version>3.0.1</maven.source.plugin.version>
 
         <!-- compile dependencies -->
-        <aws.java.sdk.version>2.3.5</aws.java.sdk.version>
+        <aws.java.sdk.version>2.17.267</aws.java.sdk.version>
         <netty.version>[4.1.59.Final,)</netty.version>
         <commons-logging.version>1.2</commons-logging.version>
 

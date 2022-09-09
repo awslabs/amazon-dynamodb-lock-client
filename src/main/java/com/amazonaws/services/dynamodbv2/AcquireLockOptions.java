@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
+import software.amazon.awssdk.metrics.MetricCollector;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 /**
@@ -45,6 +46,8 @@ public class AcquireLockOptions {
     private final Boolean acquireReleasedLocksConsistently;
     private final Optional<SessionMonitor> sessionMonitor;
     private final Boolean reentrant;
+    private final Optional<MetricCollector> metricCollector;
+
 
     /**
      * Setting this flag to true will prevent the thread from being blocked (put to sleep) for the lease duration and
@@ -69,6 +72,7 @@ public class AcquireLockOptions {
         private Long additionalTimeToWaitForLock;
         private TimeUnit timeUnit;
         private Map<String, AttributeValue> additionalAttributes;
+        private Optional<MetricCollector> metricCollector;
         private Boolean updateExistingLockRecord;
         private Boolean acquireReleasedLocksConsistently;
         private Boolean reentrant;
@@ -82,6 +86,7 @@ public class AcquireLockOptions {
             this.partitionKey = partitionKey;
             this.additionalAttributes = new HashMap<>();
             this.sortKey = Optional.empty();
+            this.metricCollector = Optional.empty();
             this.data = Optional.empty();
             this.replaceData = true;
             this.deleteLockOnRelease = true;
@@ -323,6 +328,16 @@ public class AcquireLockOptions {
             return this;
         }
 
+        /**
+         * @param metricCollector The  metric collector to use; takes precedence over the ones at the
+         *                               http client level and AWS SDK level.
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AcquireLockOptionsBuilder withMetricCollector(final MetricCollector metricCollector) {
+            this.metricCollector = Optional.ofNullable(metricCollector);
+            return this;
+        }
+
         public AcquireLockOptions build() {
             final Optional<SessionMonitor> sessionMonitor;
             if (this.isSessionMonitorSet) {
@@ -333,7 +348,8 @@ public class AcquireLockOptions {
             }
             return new AcquireLockOptions(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease, this.acquireOnlyIfLockAlreadyExists,
                     this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit, this.additionalAttributes, sessionMonitor,
-                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
+                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant,
+                this.metricCollector);
         }
 
         @Override
@@ -360,7 +376,7 @@ public class AcquireLockOptions {
     private AcquireLockOptions(final String partitionKey, final Optional<String> sortKey, final Optional<ByteBuffer> data, final Boolean replaceData,
        final Boolean deleteLockOnRelease, final Boolean acquireOnlyIfLockAlreadyExists, final Long refreshPeriod, final Long additionalTimeToWaitForLock,
        final TimeUnit timeUnit, final Map<String, AttributeValue> additionalAttributes, final Optional<SessionMonitor> sessionMonitor,
-       final Boolean updateExistingLockRecord, final Boolean shouldSkipBlockingWait, final Boolean acquireReleasedLocksConsistently, Boolean reentrant) {
+       final Boolean updateExistingLockRecord, final Boolean shouldSkipBlockingWait, final Boolean acquireReleasedLocksConsistently, Boolean reentrant,  final Optional<MetricCollector> metricCollector) {
        this.partitionKey = partitionKey;
        this.sortKey = sortKey;
        this.data = data;
@@ -376,6 +392,7 @@ public class AcquireLockOptions {
        this.shouldSkipBlockingWait = shouldSkipBlockingWait;
        this.acquireReleasedLocksConsistently = acquireReleasedLocksConsistently;
        this.reentrant = reentrant;
+       this.metricCollector = metricCollector;
     }
 
     String getPartitionKey() {
@@ -420,6 +437,10 @@ public class AcquireLockOptions {
         return this.timeUnit;
     }
 
+    public Optional<MetricCollector> getMetricCollector() {
+        return metricCollector;
+    }
+
     Boolean getReentrant() {
       return this.reentrant;
     }
@@ -460,7 +481,8 @@ public class AcquireLockOptions {
                 && Objects.equals(this.updateExistingLockRecord, otherOptions.updateExistingLockRecord)
                 && Objects.equals(this.shouldSkipBlockingWait, otherOptions.shouldSkipBlockingWait)
                 && Objects.equals(this.acquireReleasedLocksConsistently, otherOptions.acquireReleasedLocksConsistently)
-                && Objects.equals(this.reentrant, otherOptions.reentrant);
+                && Objects.equals(this.reentrant, otherOptions.reentrant)
+                && Objects.equals(this.metricCollector, otherOptions.metricCollector);
     }
 
     @Override
@@ -468,7 +490,7 @@ public class AcquireLockOptions {
         return Objects.hash(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease,
                 this.acquireOnlyIfLockAlreadyExists, this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit,
                 this.additionalAttributes, this.sessionMonitor, this.updateExistingLockRecord,
-                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
+                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant, this.metricCollector);
 
     }
 

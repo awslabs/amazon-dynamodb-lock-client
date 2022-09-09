@@ -19,7 +19,9 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
+import software.amazon.awssdk.metrics.MetricCollector;
 
 /**
  * Tests the features of the lock client that involve getting all the locks
@@ -32,12 +34,15 @@ public class GetLockOptionsTest {
 
     public static final String KEY_0 = "key0";
     public static final String RANGE_KEY_0 = "rangeKey0";
+    @Mock
+    MetricCollector metricCollector;
 
     @Test
     public void test_expectedInstanceProduced_whenChainingMethods() {
         GetLockOptions.GetLockOptionsBuilder builder = new GetLockOptions.GetLockOptionsBuilder(KEY_0)
             .withDeleteLockOnRelease(true)
-            .withSortKey(RANGE_KEY_0);
+            .withSortKey(RANGE_KEY_0)
+            .withMetricCollector(metricCollector);
         System.out.println(builder.toString());
 
         final GetLockOptions options = builder.build();
@@ -45,6 +50,8 @@ public class GetLockOptionsTest {
         assertEquals(KEY_0, options.getPartitionKey());
         assertTrue(options.isDeleteLockOnRelease());
         assertEquals(RANGE_KEY_0, options.getSortKey().get());
+        assertEquals(this.metricCollector, options.getMetricCollector().get());
+
 
     }
 

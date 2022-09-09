@@ -17,6 +17,7 @@ package com.amazonaws.services.dynamodbv2;
 import java.nio.ByteBuffer;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import software.amazon.awssdk.metrics.MetricCollector;
 
 /**
  * A simple bean for sending lock heartbeats or updating the lock data with various combinations of overrides of the default
@@ -31,13 +32,16 @@ public class SendHeartbeatOptions {
     private final Boolean deleteData;
     private final Long leaseDurationToEnsure;
     private final TimeUnit timeUnit;
+    private final Optional<MetricCollector> metricCollector;
 
-    private SendHeartbeatOptions(final LockItem lockItem, final Optional<ByteBuffer> data, final Boolean deleteData, final Long leaseDurationToEnsure, final TimeUnit timeUnit) {
+    private SendHeartbeatOptions(final LockItem lockItem, final Optional<ByteBuffer> data, final Boolean deleteData, final Long leaseDurationToEnsure, final TimeUnit timeUnit,
+        final Optional<MetricCollector> metricCollector) {
         this.lockItem = lockItem;
         this.data = data;
         this.deleteData = deleteData;
         this.leaseDurationToEnsure = leaseDurationToEnsure;
         this.timeUnit = timeUnit;
+        this.metricCollector = metricCollector;
     }
 
     public static class SendHeartbeatOptionsBuilder {
@@ -46,10 +50,12 @@ public class SendHeartbeatOptions {
         private Boolean deleteData;
         private Long leaseDurationToEnsure;
         private TimeUnit timeUnit;
+        private Optional<MetricCollector> metricCollector;
 
         SendHeartbeatOptionsBuilder(final LockItem lockItem) {
             this.lockItem = lockItem;
             this.data = Optional.empty();
+            this.metricCollector = Optional.empty();
         }
 
         /**
@@ -89,14 +95,25 @@ public class SendHeartbeatOptions {
             return this;
         }
 
+        /**
+         * @param metricCollector The request level metric collector to use, takes precedence over the ones at the
+         *                               http client level and AWS SDK level.
+         * @return a reference to this builder for fluent method chaining
+         */
+        public SendHeartbeatOptionsBuilder withMetricCollector(final MetricCollector metricCollector) {
+            this.metricCollector = Optional.ofNullable(metricCollector);
+            return this;
+        }
+
         public SendHeartbeatOptions build() {
-            return new SendHeartbeatOptions(this.lockItem, this.data, this.deleteData, this.leaseDurationToEnsure, this.timeUnit);
+            return new SendHeartbeatOptions(this.lockItem, this.data, this.deleteData, this.leaseDurationToEnsure, this.timeUnit,
+                metricCollector);
         }
 
         @Override
         public java.lang.String toString() {
             return "SendHeartbeatOptions.SendHeartbeatOptionsBuilder(lockItem=" + this.lockItem + ", data=" + this.data + ", deleteData=" + this.deleteData
-                + ", leaseDurationToEnsure=" + this.leaseDurationToEnsure + ", timeUnit=" + this.timeUnit + ")";
+                + ", leaseDurationToEnsure=" + this.leaseDurationToEnsure + ", timeUnit=" + this.timeUnit + ", metricCollector=" + this.metricCollector +  ")";
         }
     }
 
@@ -130,5 +147,9 @@ public class SendHeartbeatOptions {
 
     TimeUnit getTimeUnit() {
         return this.timeUnit;
+    }
+
+    Optional<MetricCollector> getMetricCollector() {
+        return metricCollector;
     }
 }

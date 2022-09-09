@@ -16,6 +16,7 @@ package com.amazonaws.services.dynamodbv2;
 
 import java.nio.ByteBuffer;
 import java.util.Optional;
+import software.amazon.awssdk.metrics.MetricCollector;
 
 /**
  * Provides options for releasing a lock when calling the releaseLock() method.
@@ -28,12 +29,15 @@ public class ReleaseLockOptions {
     private final boolean deleteLock;
     private final boolean bestEffort;
     private final Optional<ByteBuffer> data;
+    private final Optional<MetricCollector> metricCollector;
 
-    ReleaseLockOptions(final LockItem lockItem, final boolean deleteLock, final boolean bestEffort, final Optional<ByteBuffer> data) {
+    ReleaseLockOptions(final LockItem lockItem, final boolean deleteLock, final boolean bestEffort, final Optional<ByteBuffer> data,
+        final Optional<MetricCollector> metricCollector) {
         this.lockItem = lockItem;
         this.deleteLock = deleteLock;
         this.bestEffort = bestEffort;
         this.data = data;
+        this.metricCollector = metricCollector;
     }
 
     public static class ReleaseLockOptionsBuilder {
@@ -41,12 +45,15 @@ public class ReleaseLockOptions {
         private boolean deleteLock;
         private boolean bestEffort;
         private Optional<ByteBuffer> data;
+        private Optional<MetricCollector> metricCollector;
+
 
         ReleaseLockOptionsBuilder(final LockItem lockItem) {
             this.lockItem = lockItem;
             this.deleteLock = true;
             this.bestEffort = false;
             this.data = Optional.empty();
+            this.metricCollector = Optional.empty();
         }
 
         /**
@@ -90,14 +97,24 @@ public class ReleaseLockOptions {
             return this;
         }
 
+        /**
+         * @param metricCollector The metric collector to use.
+         * @return a reference to this builder for fluent method chaining
+         */
+        public ReleaseLockOptionsBuilder withMetricCollector(final MetricCollector metricCollector) {
+            this.metricCollector = Optional.ofNullable(metricCollector);
+            return this;
+        }
+
         public ReleaseLockOptions build() {
-            return new ReleaseLockOptions(this.lockItem, this.deleteLock, this.bestEffort, this.data);
+            return new ReleaseLockOptions(this.lockItem, this.deleteLock, this.bestEffort, this.data,
+                metricCollector);
         }
 
         @Override
         public java.lang.String toString() {
             return "ReleaseLockOptions.ReleaseLockOptionsBuilder(lockItem=" + this.lockItem + ", deleteLock=" + this.deleteLock + ", bestEffort=" + this.bestEffort + ", data="
-                + this.data + ")";
+                + this.data + ", metricCollector=" + this.metricCollector + ")";
         }
     }
 
@@ -128,5 +145,9 @@ public class ReleaseLockOptions {
 
     Optional<ByteBuffer> getData() {
         return this.data;
+    }
+
+    Optional<MetricCollector> getMetricCollector() {
+        return metricCollector;
     }
 }

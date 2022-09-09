@@ -16,6 +16,7 @@ package com.amazonaws.services.dynamodbv2;
 
 import java.util.Optional;
 
+import software.amazon.awssdk.metrics.MetricCollector;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughput;
 
@@ -33,14 +34,16 @@ public class CreateDynamoDBTableOptions {
     private final String tableName;
     private final String partitionKeyName;
     private final Optional<String> sortKeyName;
+    private final Optional<MetricCollector> metricCollector;
 
     CreateDynamoDBTableOptions(final DynamoDbClient dynamoDBClient, final ProvisionedThroughput provisionedThroughput, final String tableName, final String partitionKeyName,
-        final Optional<String> sortKeyName) {
+        final Optional<String> sortKeyName, final Optional<MetricCollector> metricCollector) {
         this.dynamoDBClient = dynamoDBClient;
         this.provisionedThroughput = provisionedThroughput;
         this.tableName = tableName;
         this.partitionKeyName = partitionKeyName;
         this.sortKeyName = sortKeyName;
+        this.metricCollector = metricCollector;
     }
 
     public static class CreateDynamoDBTableOptionsBuilder {
@@ -49,6 +52,7 @@ public class CreateDynamoDBTableOptions {
         private String tableName;
         private String partitionKeyName;
         private Optional<String> sortKeyName;
+        private Optional<MetricCollector> metricCollector;
 
         CreateDynamoDBTableOptionsBuilder(final DynamoDbClient dynamoDBClient, final ProvisionedThroughput provisionedThroughput, final String tableName) {
             this.dynamoDBClient = dynamoDBClient;
@@ -56,6 +60,7 @@ public class CreateDynamoDBTableOptions {
             this.tableName = tableName;
             this.partitionKeyName = AmazonDynamoDBLockClientOptions.DEFAULT_PARTITION_KEY_NAME;
             this.sortKeyName = Optional.empty();
+            this.metricCollector = Optional.empty();
         }
 
         /**
@@ -76,14 +81,24 @@ public class CreateDynamoDBTableOptions {
             return this;
         }
 
+        /**
+         * @param metricCollector metrics collector, optionally.
+         * @return this
+         */
+        public CreateDynamoDBTableOptionsBuilder withMetricCollector(final MetricCollector metricCollector) {
+            this.metricCollector = Optional.ofNullable(metricCollector);
+            return this;
+        }
+
         public CreateDynamoDBTableOptions build() {
-            return new CreateDynamoDBTableOptions(this.dynamoDBClient, this.provisionedThroughput, this.tableName, this.partitionKeyName, this.sortKeyName);
+            return new CreateDynamoDBTableOptions(this.dynamoDBClient, this.provisionedThroughput, this.tableName, this.partitionKeyName, this.sortKeyName,
+                metricCollector);
         }
 
         @Override
         public java.lang.String toString() {
             return "CreateDynamoDBTableOptions.CreateDynamoDBTableOptionsBuilder(dynamoDBClient=" + this.dynamoDBClient + ", provisionedThroughput=" + this.provisionedThroughput
-                + ", tableName=" + this.tableName + ", partitionKeyName=" + this.partitionKeyName + ", sortKeyName=" + this.sortKeyName + ")";
+                + ", tableName=" + this.tableName + ", partitionKeyName=" + this.partitionKeyName + ", sortKeyName=" + this.sortKeyName + ", metricCollector=" + this.metricCollector + ")";
         }
     }
 
@@ -120,5 +135,9 @@ public class CreateDynamoDBTableOptions {
 
     Optional<String> getSortKeyName() {
         return this.sortKeyName;
+    }
+
+    Optional<MetricCollector> getMetricCollector() {
+        return metricCollector;
     }
 }

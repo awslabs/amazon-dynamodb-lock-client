@@ -20,6 +20,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
+import software.amazon.awssdk.metrics.MetricCollector;
+import software.amazon.awssdk.metrics.NoOpMetricCollector;
 
 /**
  * ReleaseLockOptions unit tests.
@@ -30,11 +32,14 @@ import org.mockito.junit.MockitoJUnitRunner;
 public class ReleaseLockOptionsTest {
     @Mock
     AmazonDynamoDBLockClient lockClient;
+
+    MetricCollector metricCollector = NoOpMetricCollector.create();
     @Test
     public void withLockItem_setsLockItem() {
         LockItem lockItem = LockItemTest.createLockItem(lockClient);
-        ReleaseLockOptions.ReleaseLockOptionsBuilder builder = ReleaseLockOptions.builder(lockItem);
+        ReleaseLockOptions.ReleaseLockOptionsBuilder builder = ReleaseLockOptions.builder(lockItem).withMetricCollector(metricCollector);
         System.out.println(builder.toString());
         assertEquals(lockItem, builder.build().getLockItem());
+        assertEquals(builder.build().getMetricCollector().get(), metricCollector);
     }
 }

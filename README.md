@@ -9,9 +9,6 @@ questions.
 
 [![Build Status](https://travis-ci.org/awslabs/dynamodb-lock-client.svg?branch=master)](https://travis-ci.org/awslabs/dynamodb-lock-client)
 
-# Warning / Clarification: 
-Only v1.1.0 has been released to Maven. We recommend if you are are consuming from Maven to refer to the [1.1.x branch we have](https://github.com/awslabs/amazon-dynamodb-lock-client/tree/v1.1.x). v1.2.x is not yet released, containing SDKV2 changes, and so-on. 
-
 ## Use cases
 A common use case for this lock client is:
 let's say you have a distributed system that needs to periodically do work on a given campaign
@@ -29,7 +26,7 @@ To use the Amazon DynamoDB Lock Client, declare a dependency on the latest versi
 this artifact in Maven in your pom.xml.
 ```xml
 <dependency>
-    <groupId>com.amazonaws</groupId>
+    <groupId>software.amazon.awssdk</groupId>
     <artifactId>dynamodb-lock-client</artifactId>
     <version>1.2.0</version>
 </dependency>
