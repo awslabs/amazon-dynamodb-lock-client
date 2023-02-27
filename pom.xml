@@ -31,12 +31,12 @@
         <maven.source.plugin.version>3.0.1</maven.source.plugin.version>
 
         <!-- compile dependencies -->
-        <aws.java.sdk.version>2.3.5</aws.java.sdk.version>
-        <netty.version>[4.1.59.Final,)</netty.version>
+        <aws.java.sdk.version>2.20.8</aws.java.sdk.version>
+        <netty.version>[4.1.89.Final,)</netty.version>
         <commons-logging.version>1.2</commons-logging.version>
 
         <!-- test dependencies -->
-        <dynamodblocal.version>1.11.119</dynamodblocal.version>
+        <dynamodblocal.version>1.21.0</dynamodblocal.version>
         <mockito.version>2.23.0</mockito.version>
         <powermock.version>2.0.0</powermock.version>
         <hamcrest.version>1.3</hamcrest.version>
@@ -116,6 +116,10 @@
                 <exclusion>
                     <groupId>io.netty</groupId>
                     <artifactId>netty-handler</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>commons-codec</groupId>
+                    <artifactId>commons-codec</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -544,12 +548,6 @@
                                                 <ports>
                                                     <port>${dynamodb-local.port}:${dynamodb-local.port}</port>
                                                 </ports>
-                                                <wait>
-                                                    <http>
-                                                        <url>${dynamodb-local.endpoint}/shell/</url>
-                                                    </http>
-                                                    <time>5000</time>
-                                                </wait>
                                             </run>
                                         </image>
                                     </images>
