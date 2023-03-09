@@ -454,7 +454,7 @@ public class AmazonDynamoDBLockClientTest {
         AmazonDynamoDBLockClient client = getLockClient();
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
             false, uuid.toString(), 1L, 2L, "rvn", false,
-            Optional.empty(), null);
+            Optional.empty(), null, Optional.empty());
         client.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(true).withData(ByteBuffer.wrap("data".getBytes())).build());
     }
 
@@ -465,7 +465,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = 2l;
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
             false, uuid.toString(), 1L, lastUpdatedTimeInMilliseconds,
-            "rvn", false, Optional.empty(), null);
+            "rvn", false, Optional.empty(), null, Optional.empty());
         client.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(null).withData(ByteBuffer.wrap("data".getBytes())).build());
     }
 
@@ -476,7 +476,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = Long.MAX_VALUE;
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
             false, "different owner", 1L, lastUpdatedTimeInMilliseconds,
-            "rvn", false, Optional.empty(), null);
+            "rvn", false, Optional.empty(), null, Optional.empty());
         client.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(null).withData(ByteBuffer.wrap("data".getBytes())).build());
     }
 
@@ -487,7 +487,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = Long.MAX_VALUE;
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
             false, uuid.toString(), 1L, lastUpdatedTimeInMilliseconds,
-            "rvn", true, Optional.empty(), null);
+            "rvn", true, Optional.empty(), null, Optional.empty());
         client.sendHeartbeat(SendHeartbeatOptions.builder(item).withDeleteData(null).withData(ByteBuffer.wrap("data".getBytes())).build());
     }
 
@@ -498,7 +498,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = Long.MAX_VALUE;
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
             false, uuid.toString(), 1L, lastUpdatedTimeInMilliseconds,
-            "rvn", false, Optional.empty(), null);
+            "rvn", false, Optional.empty(), null, Optional.empty());
         client.sendHeartbeat(SendHeartbeatOptions.builder(item)
             .withDeleteData(null)
             .withData(ByteBuffer.wrap("data".getBytes()))
@@ -513,7 +513,7 @@ public class AmazonDynamoDBLockClientTest {
         String partitionKey = "partition_key";
         LockItem item = new LockItem(client, partitionKey, Optional.empty(), Optional.of(ByteBuffer.wrap("data1".getBytes())),
             false, uuid.toString(), 1L, lastUpdatedTimeInMilliseconds,
-            "rvn", false, Optional.empty(), null);
+            "rvn", false, Optional.empty(), null, Optional.empty());
         assertTrue(item.getData().isPresent());
         ByteBuffer updated = ByteBuffer.wrap("data2".getBytes());
         client.sendHeartbeat(SendHeartbeatOptions.builder(item)
@@ -536,7 +536,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = LockClientUtils.INSTANCE.millisecondTime();
         LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
                 false, uuid.toString(), 10000L, lastUpdatedTimeInMilliseconds,
-                "rvn", false, Optional.empty(), null);
+                "rvn", false, Optional.empty(), null, Optional.empty());
 
         AwsServiceException amazonServiceException = null;
         try {
@@ -564,7 +564,7 @@ public class AmazonDynamoDBLockClientTest {
         long lastUpdatedTimeInMilliseconds = LockClientUtils.INSTANCE.millisecondTime();
         LockItem lockItem = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
                 false, uuid.toString(), leaseDuration, lastUpdatedTimeInMilliseconds,
-                recordVersionNumber, false, Optional.empty(), null);
+                recordVersionNumber, false, Optional.empty(), null, Optional.empty());
 
         // Setting up a spy mock to inspect the method on lockItem object created above
         LockItem lockItemSpy = PowerMockito.spy(lockItem);
