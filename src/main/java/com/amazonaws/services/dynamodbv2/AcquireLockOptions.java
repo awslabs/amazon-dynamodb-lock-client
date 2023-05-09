@@ -351,7 +351,7 @@ public class AcquireLockOptions {
      * required parameter, which is a specific partition key.
      *
      * @param partitionKey The partition key under which the lock will be acquired.
-     * @return a builder for an AquireLockOptions object
+     * @return a builder for an AcquireLockOptions object
      */
     public static AcquireLockOptionsBuilder builder(final String partitionKey) {
         return new AcquireLockOptionsBuilder(partitionKey);
