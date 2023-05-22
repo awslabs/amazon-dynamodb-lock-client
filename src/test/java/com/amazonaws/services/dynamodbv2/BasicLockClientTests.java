@@ -14,11 +14,13 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import com.amazonaws.services.dynamodbv2.model.LockCurrentlyUnavailableException;
 import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
 import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
 import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
 import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,6 +29,8 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
+
+import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
@@ -892,6 +896,63 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         lockClient1.close();
         lockClient2.close();
+    }
+
+    /*
+     * Test case that tests that the lock was successfully acquired when another client holding the lock was
+     * unexpectedly terminated.
+     */
+    @Test
+    public void testAcquireLockWhenSkipBlockingWaitIsTurnedOnAndLockClientUnexepectedlyTerminated()
+        throws InterruptedException, NoSuchFieldException, IllegalAccessException {
+        final long leaseDuration = 1_000;
+        final long heartBeatPeriod = 200;
+        final String partition = "super_key_LOCK";
+
+        AcquireLockOptions lockOptions = AcquireLockOptions
+            .builder(partition)
+            .withAcquireReleasedLocksConsistently(true)
+            .withShouldSkipBlockingWait(true)
+            .build();
+
+        AmazonDynamoDBLockClient lockClientOne = new AmazonDynamoDBLockClient(
+            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
+                .withLeaseDuration(leaseDuration)
+                .withHeartbeatPeriod(heartBeatPeriod)
+                .withTimeUnit(TimeUnit.MILLISECONDS)
+                .withCreateHeartbeatBackgroundThread(true)
+                .build());
+
+        LockItem lockItem = lockClientOne.acquireLock(lockOptions);
+        Assert.assertNotNull(lockItem);
+
+        AmazonDynamoDBLockClient lockClientTwo = new AmazonDynamoDBLockClient(
+            new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
+                .withLeaseDuration(leaseDuration)
+                .withHeartbeatPeriod(heartBeatPeriod)
+                .withTimeUnit(TimeUnit.MILLISECONDS)
+                .withCreateHeartbeatBackgroundThread(true)
+                .build());
+
+        Thread.sleep(leaseDuration);
+        boolean wasThrown = false;
+        try {
+            lockClientTwo.acquireLock(lockOptions);
+        } catch (LockCurrentlyUnavailableException e) {
+            wasThrown = true;
+        }
+        Assert.assertTrue(wasThrown);
+
+        Field shuttingDown = lockClientOne.getClass().getDeclaredField("shuttingDown");
+        shuttingDown.setAccessible(true);
+        shuttingDown.set(lockClientOne, true);
+
+        // wait so item gets old
+        Thread.sleep(leaseDuration * 3L);
+
+        lockItem = lockClientTwo.acquireLock(lockOptions);
+        Assert.assertNotNull(lockItem);
+
     }
 
     @Test

@@ -110,6 +110,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s("oolala").build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
         LockItem lockItem = lockClient.acquireLock(AcquireLockOptions.builder(PARTITION_KEY)
                 .withSessionMonitor(3001,
@@ -162,6 +163,7 @@ public class AmazonDynamoDBLockClientTest {
         Map<String, AttributeValue> lockItem = new HashMap<>(3);
         lockItem.put("ownerName", AttributeValue.builder().s("owner").build());
         lockItem.put("leaseDuration", AttributeValue.builder().s("1").build());
+        lockItem.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         lockItem.put("recordVersionNumber", AttributeValue.builder().s("uuid").build());
         when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(lockItem).build());
         when(dynamodb.putItem(ArgumentMatchers.<PutItemRequest>any())).thenThrow(ConditionalCheckFailedException.builder().message("item existed").build());
@@ -178,6 +180,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s("oolala").build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
         when(dynamodb.putItem(Mockito.<PutItemRequest>any())).thenThrow(ProvisionedThroughputExceededException.builder()
                 .message("Provisioned Throughput for the table exceeded").build());
@@ -212,6 +215,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         item.put("isReleased", AttributeValue.builder().bool(true).build());
 
         doAnswer((InvocationOnMock invocation) -> GetItemResponse.builder().item(item).build())
@@ -229,6 +233,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         item.put("isReleased", AttributeValue.builder().bool(true).build());
         when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
         LockItem lockItem = client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireOnlyIfLockAlreadyExists(true).build());
@@ -245,6 +250,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         Map<String, AttributeValue> differentRvn1 = new HashMap<>(item);
         differentRvn1.put("recordVersionNumber",
             AttributeValue.builder().s("uuid1").build());
@@ -311,6 +317,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
 
         Map<String, AttributeValue> differentItem = new HashMap<>(item);
         differentItem.put("recordVersionNumber", AttributeValue.builder().s("a different uuid").build());
@@ -336,6 +343,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         item.put("isReleased", AttributeValue.builder().bool(true).build());
         doAnswer((InvocationOnMock invocation) -> GetItemResponse.builder().item(item).build())
                 .when(dynamodb).getItem(Mockito.<GetItemRequest>any());
@@ -351,6 +359,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s("a specific rvn").build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         item.put("isReleased", AttributeValue.builder().bool(true).build());
         when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
         LockItem lockItem = client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireReleasedLocksConsistently(true).withUpdateExistingLockRecord
@@ -372,6 +381,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s("a specific rvn").build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         item.put("isReleased", AttributeValue.builder().bool(true).build());
         when(dynamodb.getItem(Mockito.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().item(item).build());
         LockItem lockItem = client.acquireLock(AcquireLockOptions.builder("asdf").withAcquireReleasedLocksConsistently(true).withUpdateExistingLockRecord
@@ -416,6 +426,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
         item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         item.put("isReleased", AttributeValue.builder().bool(true).build());
         when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
             .thenReturn(GetItemResponse.builder().item(item).build())
@@ -439,6 +450,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("ownerName", AttributeValue.builder().s("foobar").build());
         item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
         item.put("leaseDuration", AttributeValue.builder().s("100000").build());
+        item.put("lookupTime", AttributeValue.builder().s("" +  LockClientUtils.INSTANCE.millisecondTime()).build());
         when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
             .thenReturn(GetItemResponse.builder().item(item).build())
             .thenReturn(GetItemResponse.builder().build());
