@@ -14,6 +14,7 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import com.amazonaws.services.dynamodbv2.model.LockCurrentlyUnavailableException;
 import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
 import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
 import com.amazonaws.services.dynamodbv2.model.SessionMonitorNotSetException;
@@ -45,6 +46,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.doReturn;
@@ -1486,7 +1488,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     public void testLockItemToString() throws LockNotGrantedException, InterruptedException {
         final LockItem lockItem = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
         final Pattern p = Pattern.compile("LockItem\\{Partition Key=testKey1, Sort Key=Optional.empty, Owner Name=" + INTEGRATION_TESTER + ", Lookup Time=\\d+, Lease Duration=3000, "
-            + "Record Version Number=\\w+-\\w+-\\w+-\\w+-\\w+, Delete On Close=true, Data=" + TEST_DATA + ", Is Released=false\\}");
+            + "Record Version Number=\\w+-\\w+-\\w+-\\w+-\\w+, Delete On Close=true, Data=" + TEST_DATA + ", Is Released=false, Last touched at=Optional\\.empty\\}");
         assertTrue(p.matcher(lockItem.toString()).matches());
     }
 
@@ -1687,6 +1689,96 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
 
         final GetItemRequest getRequest = getRequestCaptor.getValue();
         final PutItemRequest putRequest = putRequestCaptor.getValue();
+    }
+
+    @Test
+    public void testUpperClockSkewErrorBoundWithNoHeartbeats() throws InterruptedException {
+        final long leaseDuration = 1_000;
+        final long clockSkewErrorBound = 500L;
+        final String partition = "super_key_LOCK";
+
+        AcquireLockOptions lockOptions = AcquireLockOptions
+          .builder(partition)
+          .withAcquireReleasedLocksConsistently(true)
+          .withShouldSkipBlockingWait(true)
+          .withClockSkewUpperBound(clockSkewErrorBound)
+          .build();
+
+        final AmazonDynamoDBLockClient lockClientOne = new AmazonDynamoDBLockClient(
+          new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
+            .withLeaseDuration(leaseDuration)
+            .withTimeUnit(TimeUnit.MILLISECONDS)
+            .withCreateHeartbeatBackgroundThread(false)
+            .build());
+
+        final AmazonDynamoDBLockClient lockClientTwo = new AmazonDynamoDBLockClient(
+          new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
+            .withLeaseDuration(leaseDuration)
+            .withTimeUnit(TimeUnit.MILLISECONDS)
+            .withCreateHeartbeatBackgroundThread(false)
+            .build());
+
+        // Acquire lock successfully. Note the lack of heartbeats.
+        LockItem lockItem = lockClientOne.acquireLock(lockOptions);
+        assertNotNull(lockItem);
+
+        // Fail to acquire as we have only waited  half the upper error bound.
+        Thread.sleep(leaseDuration + clockSkewErrorBound / 2);
+        assertThrows(LockCurrentlyUnavailableException.class, () -> lockClientTwo.acquireLock(lockOptions));
+
+        // Success since we've waited 1.5 * the error bound now!
+        Thread.sleep(clockSkewErrorBound);
+        lockItem = lockClientTwo.acquireLock(lockOptions);
+        assertNotNull(lockItem);
+    }
+
+    @Test
+    public void testUpperClockSkewErrorBoundWithHeartbeats() throws InterruptedException, NoSuchFieldException, IllegalAccessException {
+        final long leaseDuration = 1_000;
+        final long clockSkewErrorBound = 500L;
+        final String partition = "super_key_LOCK";
+
+        AcquireLockOptions lockOptions = AcquireLockOptions
+          .builder(partition)
+          .withAcquireReleasedLocksConsistently(true)
+          .withShouldSkipBlockingWait(true)
+          .withClockSkewUpperBound(clockSkewErrorBound)
+          .build();
+
+        final AmazonDynamoDBLockClient lockClientOne = new AmazonDynamoDBLockClient(
+          new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
+            .withLeaseDuration(leaseDuration)
+            .withTimeUnit(TimeUnit.MILLISECONDS)
+            .withCreateHeartbeatBackgroundThread(false)
+            .build());
+
+        final AmazonDynamoDBLockClient lockClientTwo = new AmazonDynamoDBLockClient(
+          new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
+            .withLeaseDuration(leaseDuration)
+            .withTimeUnit(TimeUnit.MILLISECONDS)
+            .withCreateHeartbeatBackgroundThread(false)
+            .build());
+
+        // Acquire lock successfully. Note the lack of an implicit heartbeat background thread!
+        // We send them explicitly below.
+        LockItem lockItem = lockClientOne.acquireLock(lockOptions);
+        assertNotNull(lockItem);
+
+        // Sleep a total of 2 lease durations.
+        Thread.sleep(leaseDuration / 2);
+        lockItem.sendHeartBeat();
+        Thread.sleep(leaseDuration / 2);
+        lockItem.sendHeartBeat();
+        Thread.sleep(leaseDuration / 2);
+        lockItem.sendHeartBeat();
+        Thread.sleep(leaseDuration / 2);
+        // We need to wait another lease duration / 2 + clock skew error bound for another client
+        // to acquire the lock!
+        assertThrows(LockCurrentlyUnavailableException.class, () -> lockClientTwo.acquireLock(lockOptions));
+
+        Thread.sleep(leaseDuration);
+        lockItem = lockClientTwo.acquireLock(lockOptions);
+        assertNotNull(lockItem);
     }
 
     private LockItem getShortLeaseLock() throws InterruptedException {

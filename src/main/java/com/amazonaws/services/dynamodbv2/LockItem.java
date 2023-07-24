@@ -46,6 +46,7 @@ public class LockItem implements Closeable {
     private final StringBuffer recordVersionNumber;
     private final AtomicLong leaseDuration;
     private final Map<String, AttributeValue> additionalAttributes;
+    private final Optional<AtomicLong> lastTouchedAt;
 
     private final Optional<SessionMonitor> sessionMonitor;
 
@@ -63,7 +64,8 @@ public class LockItem implements Closeable {
      * @param deleteLockItemOnClose         Whether or not to delete the lock item when releasing it
      * @param ownerName                     The owner associated with the lock
      * @param leaseDuration                 How long the lease for the lock is (in milliseconds)
-     * @param lastUpdatedTimeInMilliseconds How recently the lock was updated (in milliseconds)
+     * @param lookupTime                    How recently the lock was updated (in milliseconds). Not the
+     *                                      wall clock time. This is backed by nanoTime().
      * @param recordVersionNumber           The current record version number of the lock -- this is
      *                                      globally unique and changes each time the lock is updated
      * @param isReleased                    Whether the item in DynamoDB is marked as released, but still
@@ -72,14 +74,18 @@ public class LockItem implements Closeable {
      *                                      the lock
      * @param additionalAttributes          Additional attributes that can optionally be stored alongside
      *                                      the lock
+     * @param lastTouchedAt                 The wall clock time (in milliseconds since epoch) that this lease
+     *                                      was last touched at via heartbeat or acquire. Used when
+     *                                      clockSkewUpperBound is set.
      */
     LockItem(final AmazonDynamoDBLockClient client, final String partitionKey, final Optional<String> sortKey, final Optional<ByteBuffer> data, final boolean deleteLockItemOnClose,
-        final String ownerName, final long leaseDuration, final long lastUpdatedTimeInMilliseconds, final String recordVersionNumber, final boolean isReleased,
-        final Optional<SessionMonitor> sessionMonitor, final Map<String, AttributeValue> additionalAttributes) {
+        final String ownerName, final long leaseDuration, final long lookupTime, final String recordVersionNumber, final boolean isReleased,
+        final Optional<SessionMonitor> sessionMonitor, final Map<String, AttributeValue> additionalAttributes, final Optional<AtomicLong> lastTouchedAt) {
         Objects.requireNonNull(partitionKey, "Cannot create a lock with a null key");
         Objects.requireNonNull(ownerName, "Cannot create a lock with a null owner");
         Objects.requireNonNull(sortKey, "Cannot create a lock with a null sortKey (use Optional.empty())");
         Objects.requireNonNull(data, "Cannot create a lock with a null data (use Optional.empty())");
+        Objects.requireNonNull(lastTouchedAt, "Cannot create a lock with a null lastTouchedAt (use Optional.empty())");
         this.client = client;
         this.partitionKey = partitionKey;
         this.sortKey = sortKey;
@@ -88,11 +94,12 @@ public class LockItem implements Closeable {
         this.deleteLockItemOnClose = deleteLockItemOnClose;
 
         this.leaseDuration = new AtomicLong(leaseDuration);
-        this.lookupTime = new AtomicLong(lastUpdatedTimeInMilliseconds);
+        this.lookupTime = new AtomicLong(lookupTime);
         this.recordVersionNumber = new StringBuffer(recordVersionNumber);
         this.isReleased = isReleased;
         this.sessionMonitor = sessionMonitor;
         this.additionalAttributes = additionalAttributes;
+        this.lastTouchedAt = lastTouchedAt;
     }
 
     /**
@@ -130,6 +137,14 @@ public class LockItem implements Closeable {
         return this.additionalAttributes;
     }
 
+    /**
+     * Returns the last touched at time since heartbeat or initial lock acquisition.
+     *
+     * @return The last touched at milliseconds since epoch
+     */
+    public Optional<AtomicLong> getLastTouchedAt() {
+        return this.lastTouchedAt;
+    }
 
     /**
      * Returns the name of the owner that owns this lock.
@@ -197,9 +212,9 @@ public class LockItem implements Closeable {
             .orElse("");
         return String
             .format("LockItem{Partition Key=%s, Sort Key=%s, Owner Name=%s, Lookup Time=%d, Lease Duration=%d, "
-                    + "Record Version Number=%s, Delete On Close=%s, Data=%s, Is Released=%s}",
+                    + "Record Version Number=%s, Delete On Close=%s, Data=%s, Is Released=%s, Last touched at=%s}",
                 this.partitionKey, this.sortKey, this.ownerName, this.lookupTime.get(), this.leaseDuration.get(), this.recordVersionNumber, this.deleteLockItemOnClose,
-                dataString, this.isReleased);
+                dataString, this.isReleased, this.lastTouchedAt);
     }
 
     /**
@@ -234,6 +249,27 @@ public class LockItem implements Closeable {
             return true;
         }
         return LockClientUtils.INSTANCE.millisecondTime() - this.lookupTime.get() > this.leaseDuration.get();
+    }
+
+    /**
+     * Returns whether the lock is expired, based on if the lock hasn't been touched since the lease duration plus
+     * cloud skew error threshold.
+     *
+     * @param clockSkewUpperBound the amount of time to add to the lease duration to account for clock skew precision errors
+     * @return True if the lock is expired, false otherwise
+     */
+    public boolean isExpired(Long clockSkewUpperBound) {
+        if (this.isReleased) {
+            return true;
+        }
+
+        if (this.lastTouchedAt.isPresent()) {
+            long currentTime = System.currentTimeMillis();
+            // If the lock hasn't been touched since the lease duration plus error bound then it's ours!
+            return currentTime > this.lastTouchedAt.get().get() + this.leaseDuration.get() + clockSkewUpperBound;
+        }
+
+        return false;
     }
 
     /**
@@ -296,6 +332,14 @@ public class LockItem implements Closeable {
         this.recordVersionNumber.replace(0, recordVersionNumber.length(), recordVersionNumber);
         this.lookupTime.set(lastUpdateOfLock);
         this.leaseDuration.set(leaseDurationToEnsureInMilliseconds);
+    }
+
+    /*
+     * Updates the last touched at field of the lock. This method is package private -- it should only be called by the lock
+     * client.
+     */
+    void updateLastTouchedAt(long lastTouchedAt) {
+        this.lastTouchedAt.ifPresent(value -> value.set(lastTouchedAt));
     }
 
     /*

@@ -45,6 +45,7 @@ public class AcquireLockOptions {
     private final Boolean acquireReleasedLocksConsistently;
     private final Optional<SessionMonitor> sessionMonitor;
     private final Boolean reentrant;
+    private final Optional<Long> clockSkewUpperBound;
 
     /**
      * Setting this flag to true will prevent the thread from being blocked (put to sleep) for the lease duration and
@@ -72,6 +73,7 @@ public class AcquireLockOptions {
         private Boolean updateExistingLockRecord;
         private Boolean acquireReleasedLocksConsistently;
         private Boolean reentrant;
+        private Optional<Long> clockSkewUpperBound;
 
         private long safeTimeWithoutHeartbeat;
         private Optional<Runnable> sessionMonitorCallback;
@@ -90,6 +92,7 @@ public class AcquireLockOptions {
             this.shouldSkipBlockingWait = false;
             this.acquireReleasedLocksConsistently = false;
             this.reentrant = false;
+            this.clockSkewUpperBound = Optional.empty();
         }
 
         /**
@@ -257,6 +260,22 @@ public class AcquireLockOptions {
         }
 
         /**
+         * In combination with withShouldSkipBlockingWait(true) this allows a node to rely on a lastTouchedAt value on the DynamoDb
+         * entry to take over locks which have expired but have not been deleted or marked as released within DynamoDb (which can occur
+         * due to an ungraceful shutdown of the owning node).
+         *
+         * It's critically important that this error bound is accurate to the nodes that are relying on the lock client. If not,
+         * correctness problems can occur.
+         *
+         * @param clockSkewUpperBound the upper error bound in milliseconds of clock skew across the nodes running this client
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AcquireLockOptionsBuilder withClockSkewUpperBound(final Long clockSkewUpperBound) {
+            this.clockSkewUpperBound = Optional.ofNullable(clockSkewUpperBound);
+            return this;
+        }
+
+        /**
          * <p>
          * Registers a "SessionMonitor."
          * </p>
@@ -333,7 +352,7 @@ public class AcquireLockOptions {
             }
             return new AcquireLockOptions(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease, this.acquireOnlyIfLockAlreadyExists,
                     this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit, this.additionalAttributes, sessionMonitor,
-                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
+                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant, this.clockSkewUpperBound);
         }
 
         @Override
@@ -342,7 +361,8 @@ public class AcquireLockOptions {
                 + this.replaceData + ", deleteLockOnRelease=" + this.deleteLockOnRelease + ", refreshPeriod=" + this.refreshPeriod + ", additionalTimeToWaitForLock="
                 + this.additionalTimeToWaitForLock + ", timeUnit=" + this.timeUnit + ", additionalAttributes=" + this.additionalAttributes + ", safeTimeWithoutHeartbeat="
                 + this.safeTimeWithoutHeartbeat + ", sessionMonitorCallback=" + this.sessionMonitorCallback + ", acquireReleasedLocksConsistently="
-                + this.acquireReleasedLocksConsistently + ", reentrant=" + this.reentrant+ ")";
+                + this.acquireReleasedLocksConsistently + ", reentrant=" + this.reentrant+ ", this.clockSkewUpperBound=" + this.clockSkewUpperBound
+              + ")";
         }
     }
 
@@ -360,7 +380,8 @@ public class AcquireLockOptions {
     private AcquireLockOptions(final String partitionKey, final Optional<String> sortKey, final Optional<ByteBuffer> data, final Boolean replaceData,
        final Boolean deleteLockOnRelease, final Boolean acquireOnlyIfLockAlreadyExists, final Long refreshPeriod, final Long additionalTimeToWaitForLock,
        final TimeUnit timeUnit, final Map<String, AttributeValue> additionalAttributes, final Optional<SessionMonitor> sessionMonitor,
-       final Boolean updateExistingLockRecord, final Boolean shouldSkipBlockingWait, final Boolean acquireReleasedLocksConsistently, Boolean reentrant) {
+       final Boolean updateExistingLockRecord, final Boolean shouldSkipBlockingWait, final Boolean acquireReleasedLocksConsistently, Boolean reentrant,
+       final Optional<Long> clockSkewUpperBound) {
        this.partitionKey = partitionKey;
        this.sortKey = sortKey;
        this.data = data;
@@ -376,6 +397,7 @@ public class AcquireLockOptions {
        this.shouldSkipBlockingWait = shouldSkipBlockingWait;
        this.acquireReleasedLocksConsistently = acquireReleasedLocksConsistently;
        this.reentrant = reentrant;
+       this.clockSkewUpperBound = clockSkewUpperBound;
     }
 
     String getPartitionKey() {
@@ -424,6 +446,8 @@ public class AcquireLockOptions {
       return this.reentrant;
     }
 
+    Optional<Long> getClockSkewUpperBound() { return this.clockSkewUpperBound; }
+
     Map<String, AttributeValue> getAdditionalAttributes() {
         return this.additionalAttributes;
     }
@@ -460,7 +484,8 @@ public class AcquireLockOptions {
                 && Objects.equals(this.updateExistingLockRecord, otherOptions.updateExistingLockRecord)
                 && Objects.equals(this.shouldSkipBlockingWait, otherOptions.shouldSkipBlockingWait)
                 && Objects.equals(this.acquireReleasedLocksConsistently, otherOptions.acquireReleasedLocksConsistently)
-                && Objects.equals(this.reentrant, otherOptions.reentrant);
+                && Objects.equals(this.reentrant, otherOptions.reentrant)
+                && Objects.equals(this.clockSkewUpperBound, otherOptions.clockSkewUpperBound);
     }
 
     @Override
@@ -468,7 +493,7 @@ public class AcquireLockOptions {
         return Objects.hash(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease,
                 this.acquireOnlyIfLockAlreadyExists, this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit,
                 this.additionalAttributes, this.sessionMonitor, this.updateExistingLockRecord,
-                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
+                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant, this.clockSkewUpperBound);
 
     }
 

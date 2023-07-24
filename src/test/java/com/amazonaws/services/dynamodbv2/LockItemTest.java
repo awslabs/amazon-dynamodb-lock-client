@@ -70,7 +70,7 @@ public class LockItemTest {
             "recordVersionNumber",
             false, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
-            new HashMap<>())));
+            new HashMap<>(), Optional.empty())));
     }
 
     @Test
@@ -85,7 +85,7 @@ public class LockItemTest {
             "recordVersionNumber",
             false, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
-            new HashMap<>())));
+            new HashMap<>(), Optional.empty())));
     }
 
     @Test
@@ -105,7 +105,7 @@ public class LockItemTest {
             "recordVersionNumber",
             true, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
-            new HashMap<>()).isExpired());
+            new HashMap<>(), Optional.empty()).isExpired());
     }
 
     @Test
@@ -125,7 +125,7 @@ public class LockItemTest {
             "recordVersionNumber",
             true, //released
             Optional.empty(), //session monitor
-            new HashMap<>()).ensure(2L, TimeUnit.MILLISECONDS);
+            new HashMap<>(), Optional.empty()).ensure(2L, TimeUnit.MILLISECONDS);
     }
 
     @Test(expected = IllegalStateException.class)
@@ -140,7 +140,7 @@ public class LockItemTest {
             "recordVersionNumber",
             true, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
-            new HashMap<>()).millisecondsUntilDangerZoneEntered();
+            new HashMap<>(), Optional.empty()).millisecondsUntilDangerZoneEntered();
     }
 
     @Test
@@ -167,7 +167,7 @@ public class LockItemTest {
             "recordVersionNumber",
             false, //released
             Optional.empty(), //session monitor
-            new HashMap<>()).hasCallback();
+            new HashMap<>(), Optional.empty()).hasCallback();
     }
 
     @Test
@@ -192,6 +192,6 @@ public class LockItemTest {
             "recordVersionNumber",
             false, //released
             Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
-            new HashMap<>()); //additional attributes
+            new HashMap<>(), Optional.empty()); //additional attributes
     }
 }
