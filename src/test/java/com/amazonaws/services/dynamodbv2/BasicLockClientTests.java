@@ -1704,14 +1704,14 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
           .withClockSkewUpperBound(clockSkewErrorBound)
           .build();
 
-        AmazonDynamoDBLockClient lockClientOne = new AmazonDynamoDBLockClient(
+        final AmazonDynamoDBLockClient lockClientOne = new AmazonDynamoDBLockClient(
           new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
             .withLeaseDuration(leaseDuration)
             .withTimeUnit(TimeUnit.MILLISECONDS)
             .withCreateHeartbeatBackgroundThread(false)
             .build());
 
-        AmazonDynamoDBLockClient lockClientTwo = new AmazonDynamoDBLockClient(
+        final AmazonDynamoDBLockClient lockClientTwo = new AmazonDynamoDBLockClient(
           new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
             .withLeaseDuration(leaseDuration)
             .withTimeUnit(TimeUnit.MILLISECONDS)
@@ -1745,21 +1745,22 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
           .withClockSkewUpperBound(clockSkewErrorBound)
           .build();
 
-        AmazonDynamoDBLockClient lockClientOne = new AmazonDynamoDBLockClient(
+        final AmazonDynamoDBLockClient lockClientOne = new AmazonDynamoDBLockClient(
           new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
             .withLeaseDuration(leaseDuration)
             .withTimeUnit(TimeUnit.MILLISECONDS)
             .withCreateHeartbeatBackgroundThread(false)
             .build());
 
-        AmazonDynamoDBLockClient lockClientTwo = new AmazonDynamoDBLockClient(
+        final AmazonDynamoDBLockClient lockClientTwo = new AmazonDynamoDBLockClient(
           new AmazonDynamoDBLockClientOptions.AmazonDynamoDBLockClientOptionsBuilder(this.dynamoDBMock, TABLE_NAME, INTEGRATION_TESTER_2)
             .withLeaseDuration(leaseDuration)
             .withTimeUnit(TimeUnit.MILLISECONDS)
             .withCreateHeartbeatBackgroundThread(false)
             .build());
 
-        // Acquire lock successfully. Note the lack of heartbeats.
+        // Acquire lock successfully. Note the lack of an implicit heartbeat background thread!
+        // We send them explicitly below.
         LockItem lockItem = lockClientOne.acquireLock(lockOptions);
         assertNotNull(lockItem);
 

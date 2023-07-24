@@ -430,7 +430,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             .getAdditionalAttributes().containsKey(DATA) || this.sortKeyName.isPresent() && options
             .getAdditionalAttributes().containsKey(this.sortKeyName.get()) || options.getAdditionalAttributes().containsKey(LAST_TOUCHED_AT)) {
             throw new IllegalArgumentException(String
-                .format("Additional attribute cannot be one of the following types: " + "%s, %s, %s, %s, %s %s", this.partitionKeyName, OWNER_NAME, LEASE_DURATION,
+                .format("Additional attribute cannot be one of the following types: " + "%s, %s, %s, %s, %s, %s", this.partitionKeyName, OWNER_NAME, LEASE_DURATION,
                     RECORD_VERSION_NUMBER, DATA, LAST_TOUCHED_AT));
         }
 
@@ -497,8 +497,10 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                     item.put(RECORD_VERSION_NUMBER, AttributeValue.builder().s(String.valueOf(recordVersionNumber)).build());
                     sortKeyName.ifPresent(sortKeyName -> item.put(sortKeyName, AttributeValue.builder().s(sortKey.get()).build()));
                     newLockData.ifPresent(byteBuffer -> item.put(DATA, AttributeValue.builder().b(SdkBytes.fromByteBuffer(byteBuffer)).build()));
-                    Optional<AtomicLong> lastTouchedAt = options.getClockSkewUpperBound()
-                      .map(unused -> new AtomicLong(System.currentTimeMillis()));
+                    Optional<AtomicLong> lastTouchedAt = Optional.empty();
+                    if (options.getClockSkewUpperBound().isPresent()) {
+                        lastTouchedAt = Optional.of(new AtomicLong(System.currentTimeMillis()));
+                    }
                     lastTouchedAt.ifPresent(value -> item.put(LAST_TOUCHED_AT, AttributeValue.builder().s(String.valueOf(value.get())).build()));
 
                     if (options.shouldSkipBlockingWait() && existingLock.isPresent() && !existingLock.get().isExpired()) {
@@ -508,9 +510,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                             // whether the lock is expired without having to block.
                             Long clockSkewUpperBound = options.getClockSkewUpperBound().get();
                             if (lockItem.getLastTouchedAt().isPresent()) {
-                                long currentTime = System.currentTimeMillis();
                                 // If the lock hasn't been touched since the lease duration plus error bound then it's ours!
-                                if (currentTime > lockItem.getLastTouchedAt().get().get() + lockItem.getLeaseDuration() + clockSkewUpperBound) {
+                                if (lockItem.isExpired(clockSkewUpperBound)) {
                                     synchronized (lockItem) {
                                         return upsertAndMonitorExpiredLock(options, key,
                                           sortKey, deleteLockOnRelease, sessionMonitor,
@@ -1215,7 +1216,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             final long lastTouchedAt = System.currentTimeMillis();
 
             //Set up update expression for UpdateItem.
-            StringBuilder updateExpression = new StringBuilder();
+            StringBuilder updateExpression = new StringBuilder(32);
             expressionAttributeValues.put(NEW_RVN_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(recordVersionNumber).build());
             expressionAttributeValues.put(LEASE_DURATION_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().s(String.valueOf(leaseDurationToEnsureInMilliseconds)).build());
             // We're always going to update lease duration and rvn

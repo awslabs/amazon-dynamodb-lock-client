@@ -252,6 +252,27 @@ public class LockItem implements Closeable {
     }
 
     /**
+     * Returns whether the lock is expired, based on if the lock hasn't been touched since the lease duration plus
+     * cloud skew error threshold.
+     *
+     * @param clockSkewUpperBound the amount of time to add to the lease duration to account for clock skew precision errors
+     * @return True if the lock is expired, false otherwise
+     */
+    public boolean isExpired(Long clockSkewUpperBound) {
+        if (this.isReleased) {
+            return true;
+        }
+
+        if (this.lastTouchedAt.isPresent()) {
+            long currentTime = System.currentTimeMillis();
+            // If the lock hasn't been touched since the lease duration plus error bound then it's ours!
+            return currentTime > this.lastTouchedAt.get().get() + this.leaseDuration.get() + clockSkewUpperBound;
+        }
+
+        return false;
+    }
+
+    /**
      * Returns whether or not the lock was marked as released when loaded from DynamoDB. Does not consider expiration time.
      *
      * @return True if the lock was marked as released when loaded from DynamoDB
@@ -313,6 +334,10 @@ public class LockItem implements Closeable {
         this.leaseDuration.set(leaseDurationToEnsureInMilliseconds);
     }
 
+    /*
+     * Updates the last touched at field of the lock. This method is package private -- it should only be called by the lock
+     * client.
+     */
     void updateLastTouchedAt(long lastTouchedAt) {
         this.lastTouchedAt.ifPresent(value -> value.set(lastTouchedAt));
     }

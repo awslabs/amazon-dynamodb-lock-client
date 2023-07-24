@@ -92,7 +92,7 @@ public class AcquireLockOptions {
             this.shouldSkipBlockingWait = false;
             this.acquireReleasedLocksConsistently = false;
             this.reentrant = false;
-            this.clockSkewUpperBound = Optional.empty();;
+            this.clockSkewUpperBound = Optional.empty();
         }
 
         /**
@@ -267,7 +267,7 @@ public class AcquireLockOptions {
          * It's critically important that this error bound is accurate to the nodes that are relying on the lock client. If not,
          * correctness problems can occur.
          *
-         * @param clockSkewUpperBound the upper error bound of clock skew across the nodes running this client
+         * @param clockSkewUpperBound the upper error bound in milliseconds of clock skew across the nodes running this client
          * @return a reference to this builder for fluent method chaining
          */
         public AcquireLockOptionsBuilder withClockSkewUpperBound(final Long clockSkewUpperBound) {
