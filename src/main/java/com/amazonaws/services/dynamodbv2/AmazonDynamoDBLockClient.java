@@ -233,6 +233,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private final boolean holdLockOnServiceUnavailable;
     private final String ownerName;
     private final ConcurrentHashMap<String, LockItem> locks;
+    private final ConcurrentHashMap<String, LockItem> notMyLocks;
     private final ConcurrentHashMap<String, Thread> sessionMonitors;
     private final Optional<Thread> backgroundThread;
     private final Function<String, ThreadFactory> namedThreadCreator;
@@ -470,11 +471,26 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                     }
 
                     if (options.shouldSkipBlockingWait() && existingLock.isPresent() && !existingLock.get().isExpired()) {
+                        String id = existingLock.get().getUniqueIdentifier();
+                        // Let's check to see if this existingLock expired based on old data we cached.
+                        // Or cache it if we haven't seen this recordVersion before.
+                        boolean itReallyIsExpired = false;
+                        if (notMyLocks.containsKey(id) &&
+                              notMyLocks.get(id).getRecordVersionNumber()
+                              .equals(existingLock.get().getRecordVersionNumber())) {
+                          itReallyIsExpired = notMyLocks.get(id).isExpired();
+                        } else {
+                            notMyLocks.put(id, existingLock.get());
+                        }
+
                         /*
                          * The lock is being held by some one and is still not expired. And the caller explicitly said not to perform a blocking wait;
                          * We will throw back a lock not grant exception, so that the caller can retry if needed.
                          */
-                        throw new LockCurrentlyUnavailableException("The lock being requested is being held by another client.");
+
+                        if (!itReallyIsExpired) {
+                            throw new LockCurrentlyUnavailableException("The lock being requested is being held by another client.");
+                        }
                     }
 
                     Optional<ByteBuffer> newLockData = Optional.empty();
