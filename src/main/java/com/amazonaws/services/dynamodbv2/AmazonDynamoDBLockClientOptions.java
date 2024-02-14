@@ -51,7 +51,6 @@ public class AmazonDynamoDBLockClientOptions {
     private final Function<String, ThreadFactory> namedThreadCreator;
     private final Boolean holdLockOnServiceUnavailable;
 
-
     /**
      * A builder for setting up an AmazonDynamoDBLockClientOptions object. By default, it is setup to have a partition key name of
      * "key," a lease duration of 20 seconds, and a default heartbeat period of 5 seconds. These defaults can be overriden.
@@ -178,6 +177,18 @@ public class AmazonDynamoDBLockClientOptions {
          */
         public AmazonDynamoDBLockClientOptionsBuilder withCreateHeartbeatBackgroundThread(final Boolean createHeartbeatBackgroundThread) {
             this.createHeartbeatBackgroundThread = createHeartbeatBackgroundThread;
+            return this;
+        }
+
+        /**
+         * Specifies the named thread creator. This is useful for setting up thread names for the heartbeat threads, as
+         * well as for overriding the default thread factory. For example, this can be used to utilize virtual threads.
+         *
+         * @param namedThreadCreator A function that takes in a thread name and outputs a ThreadFactory that creates threads with the given name.
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AmazonDynamoDBLockClientOptionsBuilder withNamedThreadCreator(final Function<String, ThreadFactory> namedThreadCreator) {
+            this.namedThreadCreator = namedThreadCreator;
             return this;
         }
 

@@ -26,6 +26,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
+
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 /**
@@ -37,6 +39,7 @@ public class LockItem implements Closeable {
     private final AmazonDynamoDBLockClient client;
     private final String partitionKey;
     private final Optional<String> sortKey;
+    private final ReentrantLock reentrantLock;
 
     private Optional<ByteBuffer> data;
     private final String ownerName;
@@ -87,6 +90,7 @@ public class LockItem implements Closeable {
         this.ownerName = ownerName;
         this.deleteLockItemOnClose = deleteLockItemOnClose;
 
+        this.reentrantLock = new ReentrantLock();
         this.leaseDuration = new AtomicLong(leaseDuration);
         this.lookupTime = new AtomicLong(lastUpdatedTimeInMilliseconds);
         this.recordVersionNumber = new StringBuffer(recordVersionNumber);
@@ -103,6 +107,15 @@ public class LockItem implements Closeable {
      */
     public String getPartitionKey() {
         return this.partitionKey;
+    }
+
+    /**
+     * Returns the {@link ReentrantLock} for this {@link LockItem}.
+     *
+     * @return The reentrant lock for this lock item.
+     */
+    public ReentrantLock getReentrantLock() {
+        return this.reentrantLock;
     }
 
     /**
