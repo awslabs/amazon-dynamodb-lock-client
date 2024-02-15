@@ -233,7 +233,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private final boolean holdLockOnServiceUnavailable;
     private final String ownerName;
     private final ConcurrentHashMap<String, LockItem> locks;
-    private final ConcurrentHashMap<String, LockItem> notMyLocks;
+    private final ConcurrentHashMap<String, LockItem> notMyLocks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Thread> sessionMonitors;
     private final Optional<Thread> backgroundThread;
     private final Function<String, ThreadFactory> namedThreadCreator;
