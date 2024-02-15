@@ -36,33 +36,33 @@ import org.powermock.modules.junit4.PowerMockRunner;
 public class SessionMonitorTest {
     @Test
     public void isLeaseEnteringDangerZone_whenThereAreZeroOrLessMillisUntilEnterDangerZone_returnTrue() {
-        SessionMonitor sut = PowerMockito.spy(new SessionMonitor(1000, Optional.empty()));
+        SessionMonitor sut = PowerMockito.spy(new SessionMonitor(1000, Optional.empty(), Thread::new));
         when(sut.millisecondsUntilLeaseEntersDangerZone(25L)).thenReturn(0L);
         assertTrue(sut.isLeaseEnteringDangerZone(25L));
     }
 
     @Test
     public void isLeaseEnteringDangerZone_whenThereAreMoreThanZeroMillisUntilEnterDangerZone_returnFalse() {
-        SessionMonitor sut = PowerMockito.spy(new SessionMonitor(1000, Optional.empty()));
+        SessionMonitor sut = PowerMockito.spy(new SessionMonitor(1000, Optional.empty(), Thread::new));
         when(sut.millisecondsUntilLeaseEntersDangerZone(25L)).thenReturn(1L);
         assertFalse(sut.isLeaseEnteringDangerZone(25L));
     }
 
     @Test
     public void runCallback_whenNotPresent_doesNothing() {
-        SessionMonitor sut = new SessionMonitor(1000, Optional.empty());
+        SessionMonitor sut = new SessionMonitor(1000, Optional.empty(), Thread::new);
         sut.runCallback();
     }
 
     @Test
     public void hasCallback_whenCallbackNull_returnFalse() {
-        SessionMonitor sut = new SessionMonitor(1000, null);
+        SessionMonitor sut = new SessionMonitor(1000, null, Thread::new);
         assertFalse(sut.hasCallback());
     }
 
     @Test
     public void hasCallback_whenCallbackNotNull_returnTrue() {
-        SessionMonitor sut = new SessionMonitor(1000, Optional.empty());
+        SessionMonitor sut = new SessionMonitor(1000, Optional.empty(), Thread::new);
         assertTrue(sut.hasCallback());
     }
 }
