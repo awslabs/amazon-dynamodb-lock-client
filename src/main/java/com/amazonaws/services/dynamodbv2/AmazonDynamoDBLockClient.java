@@ -474,11 +474,16 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                         String id = existingLock.get().getUniqueIdentifier();
                         // Let's check to see if this existingLock expired based on old data we cached.
                         // Or cache it if we haven't seen this recordVersion before.
-                        boolean itReallyIsExpired = false;
+                        boolean isReallyExpired = false;
                         if (notMyLocks.containsKey(id) &&
                               notMyLocks.get(id).getRecordVersionNumber()
                               .equals(existingLock.get().getRecordVersionNumber())) {
-                          itReallyIsExpired = notMyLocks.get(id).isExpired();
+
+                          isReallyExpired = notMyLocks.get(id).isExpired();
+                          if (isReallyExpired) {
+                              // short circuit the waiting that we normally do.
+                              lockTryingToBeAcquired = notMyLocks.get(id);
+                          }
                         } else {
                             notMyLocks.put(id, existingLock.get());
                         }
@@ -487,8 +492,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                          * The lock is being held by some one and is still not expired. And the caller explicitly said not to perform a blocking wait;
                          * We will throw back a lock not grant exception, so that the caller can retry if needed.
                          */
-
-                        if (!itReallyIsExpired) {
+                        if (!isReallyExpired) {
                             throw new LockCurrentlyUnavailableException("The lock being requested is being held by another client.");
                         }
                     }
