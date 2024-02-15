@@ -75,6 +75,14 @@ public class AmazonDynamoDBLockClientOptions {
                 namedThreadCreator());
         }
 
+        AmazonDynamoDBLockClientOptionsBuilder(final DynamoDbClient dynamoDBClient, final String tableName, final Function<String, ThreadFactory> namedThreadCreator) {
+            this(dynamoDBClient, tableName,
+                    /* By default, tries to set ownerName to the localhost */
+                    generateOwnerNameFromLocalhost(),
+                    namedThreadCreator);
+        }
+
+
         private static final String generateOwnerNameFromLocalhost() {
             try {
                 return Inet4Address.getLocalHost().getHostName() + UUID.randomUUID().toString();
@@ -181,18 +189,6 @@ public class AmazonDynamoDBLockClientOptions {
         }
 
         /**
-         * Specifies the named thread creator. This is useful for setting up thread names for the heartbeat threads, as
-         * well as for overriding the default thread factory. For example, this can be used to utilize virtual threads.
-         *
-         * @param namedThreadCreator A function that takes in a thread name and outputs a ThreadFactory that creates threads with the given name.
-         * @return a reference to this builder for fluent method chaining
-         */
-        public AmazonDynamoDBLockClientOptionsBuilder withNamedThreadCreator(final Function<String, ThreadFactory> namedThreadCreator) {
-            this.namedThreadCreator = namedThreadCreator;
-            return this;
-        }
-
-        /**
          * This parameter should be set to true only in the applications which do not have strict locking requirements.
          * When this is set to true, on DynamoDB service unavailable errors it is possible that two different clients can hold the lock.
          *
@@ -242,6 +238,20 @@ public class AmazonDynamoDBLockClientOptions {
      */
     public static AmazonDynamoDBLockClientOptionsBuilder builder(final DynamoDbClient dynamoDBClient, final String tableName) {
         return new AmazonDynamoDBLockClientOptionsBuilder(dynamoDBClient, tableName);
+    }
+
+    /**
+     * Creates an AmazonDynamoDBLockClientOptions builder object, which can be
+     * used to create an AmazonDynamoDBLockClient. The only required parameters
+     * are the client and the table name.
+     *
+     * @param dynamoDBClient The client for talking to DynamoDB.
+     * @param tableName      The table containing the lock client.
+     * @param namedThreadCreator A function that takes in a thread name and outputs a ThreadFactory that creates threads with the given name.
+     * @return A builder which can be used for creating a lock client.
+     */
+    public static AmazonDynamoDBLockClientOptionsBuilder builder(final DynamoDbClient dynamoDBClient, final String tableName, final Function<String, ThreadFactory> namedThreadCreator) {
+        return new AmazonDynamoDBLockClientOptionsBuilder(dynamoDBClient, tableName, namedThreadCreator);
     }
 
     private AmazonDynamoDBLockClientOptions(final DynamoDbClient dynamoDBClient, final String tableName, final String partitionKeyName, final Optional<String> sortKeyName,
