@@ -464,7 +464,7 @@ public class AmazonDynamoDBLockClientTest {
         item.put("leaseDuration", AttributeValue.builder().s("100").build());
         when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
             .thenReturn(GetItemResponse.builder().item(item).build())
-            .thenReturn(GetItemResponse.builder().build());
+            .thenReturn(GetItemResponse.builder().item(item).build());
         AcquireLockOptions acquireLockOptions = AcquireLockOptions.builder("customer1")
             .withShouldSkipBlockingWait(true)
             .withDeleteLockOnRelease(false).build();
