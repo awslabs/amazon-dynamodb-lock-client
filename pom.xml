@@ -47,7 +47,7 @@
         <log4j-core.version>2.17.1</log4j-core.version>
         <maven.surefire.version>3.0.0-M3</maven.surefire.version>
         <maven.failsafe.version>3.0.0-M3</maven.failsafe.version>
-        <docker.maven.plugin.version>0.28.0</docker.maven.plugin.version>
+        <docker.maven.plugin.version>0.40.2</docker.maven.plugin.version>
         <build.profile.id>dev</build.profile.id>
         <integration-test.category>*/BasicLockClientTests.java,*/GetAllLocksTests.java,*/GetLocksByPartitionKeyTest.java,*/ConsistentLockDataStressTest.java</integration-test.category>
 
