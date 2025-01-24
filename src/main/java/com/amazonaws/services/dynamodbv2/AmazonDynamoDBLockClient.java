@@ -842,7 +842,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         return this.releaseLock(ReleaseLockOptions.builder(lockItem).withDeleteLock(lockItem.getDeleteLockItemOnClose()).build());
     }
 
-    public boolean releaseLock(final ReleaseLockOptions options) {
+    public boolean releaseLock(final ReleaseLockOptions options) throws IllegalArgumentException {
         Objects.requireNonNull(options, "ReleaseLockOptions cannot be null");
 
         final LockItem lockItem = options.getLockItem();
@@ -894,6 +894,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
                     this.dynamoDB.deleteItem(deleteItemRequest);
                 } else {
+                    final Map<String, AttributeValueUpdate> additionalAttributeUpdates =
+                            checkAndRetrieveAdditionalAttributeUpdates(options);
+
                     final String updateExpression;
                     expressionAttributeNames.put(IS_RELEASED_PATH_EXPRESSION_VARIABLE, IS_RELEASED);
                     expressionAttributeValues.put(IS_RELEASED_VALUE_EXPRESSION_VARIABLE, IS_RELEASED_ATTRIBUTE_VALUE);
@@ -908,7 +911,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                             .tableName(this.tableName)
                             .key(key)
                             .updateExpression(updateExpression)
-                            .attributeUpdates(options.getAdditionalAttributeUpdates())
+                            .attributeUpdates(additionalAttributeUpdates)
                             .conditionExpression(conditionalExpression)
                             .expressionAttributeNames(expressionAttributeNames)
                             .expressionAttributeValues(expressionAttributeValues).build();
@@ -934,6 +937,24 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             this.removeKillSessionMonitor(lockItem.getUniqueIdentifier());
         }
         return true;
+    }
+
+    private Map<String, AttributeValueUpdate> checkAndRetrieveAdditionalAttributeUpdates(ReleaseLockOptions options) {
+        final Map<String, AttributeValueUpdate> additionalAttributeUpdates = options.getAdditionalAttributeUpdates();
+        if (
+                additionalAttributeUpdates.containsKey(this.partitionKeyName) ||
+                        additionalAttributeUpdates.containsKey(OWNER_NAME) ||
+                        additionalAttributeUpdates.containsKey(LEASE_DURATION) ||
+                        additionalAttributeUpdates.containsKey(RECORD_VERSION_NUMBER) ||
+                        additionalAttributeUpdates.containsKey(DATA) ||
+                        this.sortKeyName.isPresent() &&
+                                additionalAttributeUpdates.containsKey(this.sortKeyName.get())
+        ) {
+            throw new IllegalArgumentException(String
+                    .format("Additional attribute cannot be one of the following types: " + "%s, %s, %s, %s, %s", this.partitionKeyName, OWNER_NAME, LEASE_DURATION,
+                            RECORD_VERSION_NUMBER, DATA));
+        }
+        return additionalAttributeUpdates;
     }
 
     private Map<String, AttributeValue> getItemKeys(LockItem lockItem) {

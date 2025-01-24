@@ -1540,6 +1540,44 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
                 .build());
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesData() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("data");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesKey() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("key");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesLeaseDuration() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("leaseDuration");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesRecordVersionNumber() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("recordVersionNumber");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesOwnerName() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("ownerName");
+    }
+
+    private void testInvalidAttributeUpdate(final String invalidAttribute) throws InterruptedException {
+        final LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").build());
+
+        final Map<String, AttributeValueUpdate> additionalAttributeUpdates = new HashMap<>();
+        additionalAttributeUpdates.put(
+                invalidAttribute,
+                AttributeValueUpdate.builder().value(AttributeValue.fromS("ok")).build()
+        );
+        this.lockClient.releaseLock(
+                ReleaseLockOptions.builder(item).withAdditionalAttributeUpdates(additionalAttributeUpdates).build()
+        );
+    }
+
     @Test
     public void testLockItemToString() throws LockNotGrantedException, InterruptedException {
         final LockItem lockItem = this.lockClient.acquireLock(ACQUIRE_LOCK_OPTIONS_TEST_KEY_1);
