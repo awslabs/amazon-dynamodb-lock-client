@@ -14,7 +14,11 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import software.amazon.awssdk.services.dynamodb.model.AttributeValueUpdate;
+
 import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -28,25 +32,29 @@ public class ReleaseLockOptions {
     private final boolean deleteLock;
     private final boolean bestEffort;
     private final Optional<ByteBuffer> data;
+    private final Map<String, AttributeValueUpdate> additionalAttributeUpdates;
 
-    ReleaseLockOptions(final LockItem lockItem, final boolean deleteLock, final boolean bestEffort, final Optional<ByteBuffer> data) {
+    ReleaseLockOptions(final LockItem lockItem, final boolean deleteLock, final boolean bestEffort, final Optional<ByteBuffer> data, Map<String, AttributeValueUpdate> additionalAttributeUpdates) {
         this.lockItem = lockItem;
         this.deleteLock = deleteLock;
         this.bestEffort = bestEffort;
         this.data = data;
+        this.additionalAttributeUpdates = additionalAttributeUpdates;
     }
 
     public static class ReleaseLockOptionsBuilder {
-        private LockItem lockItem;
+        private final LockItem lockItem;
         private boolean deleteLock;
         private boolean bestEffort;
         private Optional<ByteBuffer> data;
+        private Map<String, AttributeValueUpdate> additionalAttributeUpdates;
 
         ReleaseLockOptionsBuilder(final LockItem lockItem) {
             this.lockItem = lockItem;
             this.deleteLock = true;
             this.bestEffort = false;
             this.data = Optional.empty();
+            this.additionalAttributeUpdates = new HashMap<>();
         }
 
         /**
@@ -90,14 +98,25 @@ public class ReleaseLockOptions {
             return this;
         }
 
+        /**
+         * Stores some additional attributes with the lock. This can be used to add/update any arbitrary parameters to
+         * the lock row.
+         *
+         * @param additionalAttributeUpdates an arbitrary map of attribute updates to store with the lock row to be acquired
+         * @return a reference to this builder for fluent method chaining
+         */
+        public ReleaseLockOptionsBuilder withAdditionalAttributeUpdates(Map<String, AttributeValueUpdate> additionalAttributeUpdates) {
+            this.additionalAttributeUpdates = additionalAttributeUpdates;
+            return this;
+        }
+
         public ReleaseLockOptions build() {
-            return new ReleaseLockOptions(this.lockItem, this.deleteLock, this.bestEffort, this.data);
+            return new ReleaseLockOptions(this.lockItem, this.deleteLock, this.bestEffort, this.data, this.additionalAttributeUpdates);
         }
 
         @Override
-        public java.lang.String toString() {
-            return "ReleaseLockOptions.ReleaseLockOptionsBuilder(lockItem=" + this.lockItem + ", deleteLock=" + this.deleteLock + ", bestEffort=" + this.bestEffort + ", data="
-                + this.data + ")";
+        public String toString() {
+            return String.format("ReleaseLockOptions.ReleaseLockOptionsBuilder(lockItem=%s, deleteLock=%s, bestEffort=%s, data=%s, additionalAttributeUpdates=%s)", lockItem, deleteLock, bestEffort, data, additionalAttributeUpdates);
         }
     }
 
@@ -128,5 +147,9 @@ public class ReleaseLockOptions {
 
     Optional<ByteBuffer> getData() {
         return this.data;
+    }
+
+    Map<String, AttributeValueUpdate> getAdditionalAttributeUpdates() {
+        return additionalAttributeUpdates;
     }
 }

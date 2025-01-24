@@ -52,6 +52,7 @@ import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValueUpdate;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.CreateTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
@@ -907,6 +908,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                             .tableName(this.tableName)
                             .key(key)
                             .updateExpression(updateExpression)
+                            .attributeUpdates(options.getAdditionalAttributeUpdates())
                             .conditionExpression(conditionalExpression)
                             .expressionAttributeNames(expressionAttributeNames)
                             .expressionAttributeValues(expressionAttributeValues).build();
