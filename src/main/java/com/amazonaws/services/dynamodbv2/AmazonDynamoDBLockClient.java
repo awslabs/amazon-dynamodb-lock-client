@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -52,6 +53,7 @@ import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValueUpdate;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.CreateTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
@@ -841,7 +843,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         return this.releaseLock(ReleaseLockOptions.builder(lockItem).withDeleteLock(lockItem.getDeleteLockItemOnClose()).build());
     }
 
-    public boolean releaseLock(final ReleaseLockOptions options) {
+    public boolean releaseLock(final ReleaseLockOptions options) throws IllegalArgumentException {
         Objects.requireNonNull(options, "ReleaseLockOptions cannot be null");
 
         final LockItem lockItem = options.getLockItem();
@@ -893,20 +895,38 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
                     this.dynamoDB.deleteItem(deleteItemRequest);
                 } else {
-                    final String updateExpression;
+                    final Map<String, AttributeValueUpdate> additionalAttributeUpdates =
+                            checkAndRetrieveAdditionalAttributeUpdates(options);
+
+                    StringBuilder updateExpression;
                     expressionAttributeNames.put(IS_RELEASED_PATH_EXPRESSION_VARIABLE, IS_RELEASED);
                     expressionAttributeValues.put(IS_RELEASED_VALUE_EXPRESSION_VARIABLE, IS_RELEASED_ATTRIBUTE_VALUE);
                     if (data.isPresent()) {
-                        updateExpression = UPDATE_IS_RELEASED_AND_DATA;
+                        updateExpression = new StringBuilder(UPDATE_IS_RELEASED_AND_DATA);
                         expressionAttributeNames.put(DATA_PATH_EXPRESSION_VARIABLE, DATA);
                         expressionAttributeValues.put(DATA_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().b(SdkBytes.fromByteBuffer(data.get())).build());
                     } else {
-                        updateExpression = UPDATE_IS_RELEASED;
+                        updateExpression = new StringBuilder(UPDATE_IS_RELEASED);
+                    }
+                    for (Entry<String, AttributeValueUpdate> entry : additionalAttributeUpdates.entrySet()) {
+                        String k = entry.getKey();
+                        String attributePathExpressionVariable = "#" + k.toLowerCase(Locale.getDefault());
+                        String attributeValueExpressionVariable = ":" + k.toLowerCase(Locale.getDefault());
+                        expressionAttributeNames.put(attributePathExpressionVariable, k);
+                        AttributeValueUpdate v = entry.getValue();
+                        expressionAttributeValues.put(attributeValueExpressionVariable, v.value());
+                        updateExpression.append(
+                                String.format(
+                                        ", %s = %s",
+                                        attributePathExpressionVariable,
+                                        attributeValueExpressionVariable
+                                )
+                        );
                     }
                     final UpdateItemRequest updateItemRequest = UpdateItemRequest.builder()
                             .tableName(this.tableName)
                             .key(key)
-                            .updateExpression(updateExpression)
+                            .updateExpression(updateExpression.toString())
                             .conditionExpression(conditionalExpression)
                             .expressionAttributeNames(expressionAttributeNames)
                             .expressionAttributeValues(expressionAttributeValues).build();
@@ -932,6 +952,24 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             this.removeKillSessionMonitor(lockItem.getUniqueIdentifier());
         }
         return true;
+    }
+
+    private Map<String, AttributeValueUpdate> checkAndRetrieveAdditionalAttributeUpdates(ReleaseLockOptions options) {
+        final Map<String, AttributeValueUpdate> additionalAttributeUpdates = options.getAdditionalAttributeUpdates();
+        if (
+                additionalAttributeUpdates.containsKey(this.partitionKeyName) ||
+                        additionalAttributeUpdates.containsKey(OWNER_NAME) ||
+                        additionalAttributeUpdates.containsKey(LEASE_DURATION) ||
+                        additionalAttributeUpdates.containsKey(RECORD_VERSION_NUMBER) ||
+                        additionalAttributeUpdates.containsKey(DATA) ||
+                        this.sortKeyName.isPresent() &&
+                                additionalAttributeUpdates.containsKey(this.sortKeyName.get())
+        ) {
+            throw new IllegalArgumentException(String
+                    .format("Additional attribute cannot be one of the following types: " + "%s, %s, %s, %s, %s", this.partitionKeyName, OWNER_NAME, LEASE_DURATION,
+                            RECORD_VERSION_NUMBER, DATA));
+        }
+        return additionalAttributeUpdates;
     }
 
     private Map<String, AttributeValue> getItemKeys(LockItem lockItem) {

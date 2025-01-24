@@ -34,6 +34,7 @@ import org.mockito.Mockito;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValueUpdate;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
@@ -45,6 +46,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.doReturn;
@@ -1002,7 +1004,7 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
     }
 
     @Test
-    public void testSendHeatbeatWithRangeKey() throws IOException, LockNotGrantedException, InterruptedException {
+    public void testSendHeartbeatWithRangeKey() throws IOException, LockNotGrantedException, InterruptedException {
 
         final String data = new String("testSendHeartbeatLeaveData" + SECURE_RANDOM.nextDouble());
 
@@ -1120,6 +1122,62 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
         item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
                 .withDeleteLockOnRelease(false).withReplaceData(false).build());
         assertEquals("newData", byteBufferToString(item.getData().get()));
+
+        item.close();
+    }
+
+    @Test
+    public void testReleaseLockLeaveItemAndChangeAttributes() throws LockNotGrantedException, InterruptedException {
+        final String lockTypeAttributeName = "LockType";
+        final String boreDiameterAttributeName = "BoreDiameter";
+
+        final AttributeValue initialLockType = AttributeValue.fromS("Mortise");
+
+        final Map<String, AttributeValue> additionalAttributes = new HashMap<>();
+        additionalAttributes.put(lockTypeAttributeName, initialLockType);
+
+        LockItem item = this.lockClient.acquireLock(
+                AcquireLockOptions.builder("testKey1")
+                        .withAdditionalAttributes(additionalAttributes)
+                        .withDeleteLockOnRelease(false)
+                        .withReplaceData(true)
+                        .build()
+        );
+        assertEquals(initialLockType, item.getAdditionalAttributes().get(lockTypeAttributeName));
+        assertNull(item.getAdditionalAttributes().get(boreDiameterAttributeName));
+
+        final AttributeValue updatedLockType = AttributeValue.fromS("Deadbolt");
+
+        final AttributeValue boreDiameter = AttributeValue.fromN("55");
+
+        final Map<String, AttributeValueUpdate> additionalAttributeUpdates = new HashMap<>();
+        additionalAttributeUpdates.put(
+                lockTypeAttributeName,
+                AttributeValueUpdate.builder().value(updatedLockType).build()
+        );
+        additionalAttributeUpdates.put(
+                boreDiameterAttributeName,
+                AttributeValueUpdate.builder().value(boreDiameter).build()
+        );
+
+        this.lockClient.releaseLock(
+                ReleaseLockOptions.builder(item)
+                        .withDeleteLock(false)
+                        .withAdditionalAttributeUpdates(additionalAttributeUpdates)
+                        .build()
+        );
+
+        assertEquals(Optional.empty(), this.lockClient.getLock("testKey1", Optional.empty()));
+
+        item = this.lockClient.getLockFromDynamoDB(GET_LOCK_OPTIONS_DO_NOT_DELETE_ON_RELEASE).get();
+        assertTrue(item.isReleased());
+        assertEquals(updatedLockType, item.getAdditionalAttributes().get(lockTypeAttributeName));
+        assertEquals(boreDiameter, item.getAdditionalAttributes().get(boreDiameterAttributeName));
+
+        item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1")
+                .withDeleteLockOnRelease(false).withReplaceData(false).build());
+        assertEquals(updatedLockType, item.getAdditionalAttributes().get(lockTypeAttributeName));
+        assertEquals(boreDiameter, item.getAdditionalAttributes().get(boreDiameterAttributeName));
 
         item.close();
     }
@@ -1480,6 +1538,44 @@ public class BasicLockClientTests extends InMemoryLockClientTester {
                 .withData(ByteBuffer.wrap(TEST_DATA.getBytes()))
                 .withAdditionalAttributes(additionalAttributes)
                 .build());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesData() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("data");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesKey() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("key");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesLeaseDuration() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("leaseDuration");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesRecordVersionNumber() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("recordVersionNumber");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInvalidAttributeUpdatesOwnerName() throws LockNotGrantedException, InterruptedException {
+        this.testInvalidAttributeUpdate("ownerName");
+    }
+
+    private void testInvalidAttributeUpdate(final String invalidAttribute) throws InterruptedException {
+        final LockItem item = this.lockClient.acquireLock(AcquireLockOptions.builder("testKey1").build());
+
+        final Map<String, AttributeValueUpdate> additionalAttributeUpdates = new HashMap<>();
+        additionalAttributeUpdates.put(
+                invalidAttribute,
+                AttributeValueUpdate.builder().value(AttributeValue.fromS("ok")).build()
+        );
+        this.lockClient.releaseLock(
+                ReleaseLockOptions.builder(item).withAdditionalAttributeUpdates(additionalAttributeUpdates).build()
+        );
     }
 
     @Test
