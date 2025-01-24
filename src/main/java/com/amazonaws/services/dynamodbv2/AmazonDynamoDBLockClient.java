@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -897,21 +898,35 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                     final Map<String, AttributeValueUpdate> additionalAttributeUpdates =
                             checkAndRetrieveAdditionalAttributeUpdates(options);
 
-                    final String updateExpression;
+                    StringBuilder updateExpression;
                     expressionAttributeNames.put(IS_RELEASED_PATH_EXPRESSION_VARIABLE, IS_RELEASED);
                     expressionAttributeValues.put(IS_RELEASED_VALUE_EXPRESSION_VARIABLE, IS_RELEASED_ATTRIBUTE_VALUE);
                     if (data.isPresent()) {
-                        updateExpression = UPDATE_IS_RELEASED_AND_DATA;
+                        updateExpression = new StringBuilder(UPDATE_IS_RELEASED_AND_DATA);
                         expressionAttributeNames.put(DATA_PATH_EXPRESSION_VARIABLE, DATA);
                         expressionAttributeValues.put(DATA_VALUE_EXPRESSION_VARIABLE, AttributeValue.builder().b(SdkBytes.fromByteBuffer(data.get())).build());
                     } else {
-                        updateExpression = UPDATE_IS_RELEASED;
+                        updateExpression = new StringBuilder(UPDATE_IS_RELEASED);
+                    }
+                    for (Entry<String, AttributeValueUpdate> entry : additionalAttributeUpdates.entrySet()) {
+                        String k = entry.getKey();
+                        String attributePathExpressionVariable = "#" + k.toLowerCase(Locale.getDefault());
+                        String attributeValueExpressionVariable = ":" + k.toLowerCase(Locale.getDefault());
+                        expressionAttributeNames.put(attributePathExpressionVariable, k);
+                        AttributeValueUpdate v = entry.getValue();
+                        expressionAttributeValues.put(attributeValueExpressionVariable, v.value());
+                        updateExpression.append(
+                                String.format(
+                                        ", %s = %s",
+                                        attributePathExpressionVariable,
+                                        attributeValueExpressionVariable
+                                )
+                        );
                     }
                     final UpdateItemRequest updateItemRequest = UpdateItemRequest.builder()
                             .tableName(this.tableName)
                             .key(key)
-                            .updateExpression(updateExpression)
-                            .attributeUpdates(additionalAttributeUpdates)
+                            .updateExpression(updateExpression.toString())
                             .conditionExpression(conditionalExpression)
                             .expressionAttributeNames(expressionAttributeNames)
                             .expressionAttributeValues(expressionAttributeValues).build();
@@ -941,6 +956,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
     private Map<String, AttributeValueUpdate> checkAndRetrieveAdditionalAttributeUpdates(ReleaseLockOptions options) {
         final Map<String, AttributeValueUpdate> additionalAttributeUpdates = options.getAdditionalAttributeUpdates();
+        System.out.println(additionalAttributeUpdates);
         if (
                 additionalAttributeUpdates.containsKey(this.partitionKeyName) ||
                         additionalAttributeUpdates.containsKey(OWNER_NAME) ||
