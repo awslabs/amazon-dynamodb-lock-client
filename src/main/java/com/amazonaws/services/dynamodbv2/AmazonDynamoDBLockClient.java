@@ -956,7 +956,6 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
     private Map<String, AttributeValueUpdate> checkAndRetrieveAdditionalAttributeUpdates(ReleaseLockOptions options) {
         final Map<String, AttributeValueUpdate> additionalAttributeUpdates = options.getAdditionalAttributeUpdates();
-        System.out.println(additionalAttributeUpdates);
         if (
                 additionalAttributeUpdates.containsKey(this.partitionKeyName) ||
                         additionalAttributeUpdates.containsKey(OWNER_NAME) ||
