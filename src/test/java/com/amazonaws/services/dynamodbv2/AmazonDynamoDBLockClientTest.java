@@ -443,9 +443,44 @@ public class AmazonDynamoDBLockClientTest {
             .thenReturn(GetItemResponse.builder().item(item).build())
             .thenReturn(GetItemResponse.builder().build());
         AcquireLockOptions acquireLockOptions = AcquireLockOptions.builder("customer1")
-                .withShouldSkipBlockingWait(true)
-                .withDeleteLockOnRelease(false).build();
+            .withShouldSkipBlockingWait(true)
+            .withDeleteLockOnRelease(false).build();
         client.acquireLock(acquireLockOptions);
+    }
+    /*
+     * Test case for the scenario, where the lock is being held by the first owner and the lock duration has not past
+     * the lease duration. In this case, We should expect a LockAlreadyOwnedException when shouldSkipBlockingWait is set.
+     * But if we try again later, we should get the lock.
+     */
+    @Test
+    public void acquireLock_whenLockAlreadyExistsAndIsNotReleased_andSkipBlockingWait_eventuallyGetsTheLock()
+        throws InterruptedException {
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("100").build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(item).build())
+            .thenReturn(GetItemResponse.builder().item(item).build());
+        AcquireLockOptions acquireLockOptions = AcquireLockOptions.builder("customer1")
+            .withShouldSkipBlockingWait(true)
+            .withDeleteLockOnRelease(false).build();
+
+        try {
+            client.acquireLock(acquireLockOptions);
+        } catch (LockCurrentlyUnavailableException e) {
+            // This is expected
+        } catch (RuntimeException e) {
+            Assert.fail("Expected LockCurrentlyUnavailableException, but got " + e.getClass().getName());
+        }
+
+        // Now wait for the TTL to expire and try to acquire the lock again
+        Thread.sleep(101);
+        LockItem lockItem = client.acquireLock(acquireLockOptions);
+        Assert.assertNotNull("Failed to get lock item, when the lock is not present in the db", lockItem);
     }
 
     @Test(expected = IllegalArgumentException.class)
