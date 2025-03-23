@@ -474,15 +474,13 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                         String id = existingLock.get().getUniqueIdentifier();
                         // Let's check to see if this existingLock expired based on old data we cached.
                         // Or cache it if we haven't seen this recordVersion before.
+                        LockItem cachedLock = notMyLocks.get(id);
                         boolean isReallyExpired = false;
-                        if (notMyLocks.containsKey(id) &&
-                              notMyLocks.get(id).getRecordVersionNumber()
-                              .equals(existingLock.get().getRecordVersionNumber())) {
-
-                          isReallyExpired = notMyLocks.get(id).isExpired();
+                        if (cachedLock != null && cachedLock.getRecordVersionNumber().equals(existingLock.get().getRecordVersionNumber())) {
+                          isReallyExpired = cachedLock.isExpired();
                           if (isReallyExpired) {
                               // short circuit the waiting that we normally do.
-                              lockTryingToBeAcquired = notMyLocks.get(id);
+                              lockTryingToBeAcquired = cachedLock;
                           }
                         } else {
                             notMyLocks.put(id, existingLock.get());
