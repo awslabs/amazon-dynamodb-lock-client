@@ -15,6 +15,7 @@
 package com.amazonaws.services.dynamodbv2;
 
 import java.util.Optional;
+import java.util.concurrent.ThreadFactory;
 
 import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 
@@ -29,6 +30,7 @@ import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 final class SessionMonitor {
     private final long safeTimeWithoutHeartbeatMillis;
     private final Optional<Runnable> callback;
+    private final ThreadFactory threadFactory;
 
     /**
      * Constructs a SessionMonitor object.
@@ -38,10 +40,15 @@ final class SessionMonitor {
      *                                       "danger zone"
      * @param callback                       the callback to run when the lock's lease enters the danger
      *                                       zone
+     * @param threadFactory                  the factory to create the thread that will run the callback
      */
-    public SessionMonitor(final long safeTimeWithoutHeartbeatMillis, final Optional<Runnable> callback) {
+    public SessionMonitor(
+            final long safeTimeWithoutHeartbeatMillis,
+            final Optional<Runnable> callback,
+            final ThreadFactory threadFactory) {
         this.safeTimeWithoutHeartbeatMillis = safeTimeWithoutHeartbeatMillis;
         this.callback = callback;
+        this.threadFactory = threadFactory;
     }
 
     /**
@@ -78,7 +85,7 @@ final class SessionMonitor {
      */
     public void runCallback() {
         if (this.callback.isPresent()) {
-            final Thread t = new Thread(this.callback.get());
+            final Thread t = this.threadFactory.newThread(this.callback.get());
             t.setDaemon(true);
             t.start();
         }

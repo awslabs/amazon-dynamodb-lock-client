@@ -51,7 +51,6 @@ public class AmazonDynamoDBLockClientOptions {
     private final Function<String, ThreadFactory> namedThreadCreator;
     private final Boolean holdLockOnServiceUnavailable;
 
-
     /**
      * A builder for setting up an AmazonDynamoDBLockClientOptions object. By default, it is setup to have a partition key name of
      * "key," a lease duration of 20 seconds, and a default heartbeat period of 5 seconds. These defaults can be overriden.
@@ -75,6 +74,14 @@ public class AmazonDynamoDBLockClientOptions {
                 generateOwnerNameFromLocalhost(),
                 namedThreadCreator());
         }
+
+        AmazonDynamoDBLockClientOptionsBuilder(final DynamoDbClient dynamoDBClient, final String tableName, final Function<String, ThreadFactory> namedThreadCreator) {
+            this(dynamoDBClient, tableName,
+                    /* By default, tries to set ownerName to the localhost */
+                    generateOwnerNameFromLocalhost(),
+                    namedThreadCreator);
+        }
+
 
         private static final String generateOwnerNameFromLocalhost() {
             try {
@@ -231,6 +238,20 @@ public class AmazonDynamoDBLockClientOptions {
      */
     public static AmazonDynamoDBLockClientOptionsBuilder builder(final DynamoDbClient dynamoDBClient, final String tableName) {
         return new AmazonDynamoDBLockClientOptionsBuilder(dynamoDBClient, tableName);
+    }
+
+    /**
+     * Creates an AmazonDynamoDBLockClientOptions builder object, which can be
+     * used to create an AmazonDynamoDBLockClient. The only required parameters
+     * are the client and the table name.
+     *
+     * @param dynamoDBClient The client for talking to DynamoDB.
+     * @param tableName      The table containing the lock client.
+     * @param namedThreadCreator A function that takes in a thread name and outputs a ThreadFactory that creates threads with the given name.
+     * @return A builder which can be used for creating a lock client.
+     */
+    public static AmazonDynamoDBLockClientOptionsBuilder builder(final DynamoDbClient dynamoDBClient, final String tableName, final Function<String, ThreadFactory> namedThreadCreator) {
+        return new AmazonDynamoDBLockClientOptionsBuilder(dynamoDBClient, tableName, namedThreadCreator);
     }
 
     private AmazonDynamoDBLockClientOptions(final DynamoDbClient dynamoDBClient, final String tableName, final String partitionKeyName, final Optional<String> sortKeyName,

@@ -69,7 +69,7 @@ public class LockItemTest {
             1000, //last updated time in milliseconds
             "recordVersionNumber",
             false, //released
-            Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
+            Optional.of(new SessionMonitor(1000, Optional.empty(), Thread::new)), //session monitor
             new HashMap<>())));
     }
 
@@ -84,7 +84,7 @@ public class LockItemTest {
             1000, //last updated time in milliseconds
             "recordVersionNumber",
             false, //released
-            Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
+            Optional.of(new SessionMonitor(1000, Optional.empty(), Thread::new)), //session monitor
             new HashMap<>())));
     }
 
@@ -104,7 +104,7 @@ public class LockItemTest {
             1000, //last updated time in milliseconds
             "recordVersionNumber",
             true, //released
-            Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
+            Optional.of(new SessionMonitor(1000, Optional.empty(), Thread::new)), //session monitor
             new HashMap<>()).isExpired());
     }
 
@@ -139,7 +139,7 @@ public class LockItemTest {
             1000, //last updated time in milliseconds
             "recordVersionNumber",
             true, //released
-            Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
+            Optional.of(new SessionMonitor(1000, Optional.empty(), Thread::new)), //session monitor
             new HashMap<>()).millisecondsUntilDangerZoneEntered();
     }
 
@@ -191,7 +191,7 @@ public class LockItemTest {
             1000, //last updated time in milliseconds
             "recordVersionNumber",
             false, //released
-            Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
+            Optional.of(new SessionMonitor(1000, Optional.empty(), Thread::new)), //session monitor
             new HashMap<>()); //additional attributes
     }
 }

@@ -32,6 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -237,6 +238,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private final ConcurrentHashMap<String, Thread> sessionMonitors;
     private final Optional<Thread> backgroundThread;
     private final Function<String, ThreadFactory> namedThreadCreator;
+    private final ReentrantLock releaseLocksReentrantLock;
     private volatile boolean shuttingDown = false;
 
     /* These are the keys that are stored in the DynamoDB table to keep track of the locks */
@@ -281,6 +283,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         this.sortKeyName = amazonDynamoDBLockClientOptions.getSortKeyName();
         this.namedThreadCreator = amazonDynamoDBLockClientOptions.getNamedThreadCreator();
         this.holdLockOnServiceUnavailable = amazonDynamoDBLockClientOptions.getHoldLockOnServiceUnavailable();
+        this.releaseLocksReentrantLock = new ReentrantLock();
 
         if (amazonDynamoDBLockClientOptions.getCreateHeartbeatBackgroundThread()) {
             if (this.leaseDurationInMilliseconds < 2 * this.heartbeatPeriodInMilliseconds) {
@@ -853,7 +856,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             return false;
         }
 
-        synchronized (lockItem) {
+        lockItem.getReentrantLock().lock();
+        try
+        {
             try {
                 // Always remove the heartbeat for the lock. The
                 // caller's intention is to release the lock. Stopping the
@@ -931,6 +936,12 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             // get exceptions from this method.
             this.removeKillSessionMonitor(lockItem.getUniqueIdentifier());
         }
+        finally
+        {
+            lockItem.getReentrantLock()
+                    .unlock();
+        }
+
         return true;
     }
 
@@ -952,10 +963,14 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      */
     private void releaseAllLocks() {
         final Map<String, LockItem> locks = new HashMap<>(this.locks);
-        synchronized (locks) {
+        this.releaseLocksReentrantLock.lock();
+        try {
             for (final Entry<String, LockItem> lockEntry : locks.entrySet()) {
                 this.releaseLock(lockEntry.getValue()); // TODO catch exceptions and report failure separately
             }
+        }
+        finally {
+            this.releaseLocksReentrantLock.unlock();
         }
     }
 
@@ -1163,7 +1178,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             throw new LockNotGrantedException("Cannot send heartbeat because lock is not granted");
         }
 
-        synchronized (lockItem) {
+        lockItem.getReentrantLock().lock();
+        try {
             //Set up condition for UpdateItem. Basically any changes require:
             //1. I own the lock
             //2. I know the current version number
@@ -1234,6 +1250,10 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                     throw awsServiceException;
                 }
             }
+        }
+        finally {
+            lockItem.getReentrantLock()
+                    .unlock();
         }
     }
 
