@@ -250,7 +250,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     protected static volatile AtomicInteger lockClientId = new AtomicInteger(0);
     protected static final Boolean IS_RELEASED_INDICATOR = true;
     /*
-     * Used as a default buffer for how long extra to wait when querying DynamoDB for a lock in acquireLock (can be overriden by
+     * Used as a default buffer for how long extra to wait when querying DynamoDB for a lock in acquireLock (can be overridden by
      * specifying a timeout when calling acquireLock)
      */
     private static final long DEFAULT_BUFFER_MS = 1000;
@@ -781,7 +781,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     }
 
     /**
-     * Builds an updateExpression for all fields in item map and updates the correspoding expression attribute name and
+     * Builds an updateExpression for all fields in item map and updates the corresponding expression attribute name and
      * value maps.
      * @param item Map of Name and AttributeValue to update or create
      * @param expressionAttributeNames
@@ -1267,7 +1267,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 /* If we want to hearbeat every 9 seconds, and it took 3 seconds to send the heartbeats, we only sleep 6 seconds */
                 Thread.sleep(Math.max(this.heartbeatPeriodInMilliseconds - timeElapsed, 0));
             } catch (final InterruptedException e) {
-                logger.info("Heartbeat thread recieved interrupt, exiting run() (possibly exiting thread)", e);
+                logger.info("Heartbeat thread received interrupt, exiting run() (possibly exiting thread)", e);
                 return;
             } catch (final RuntimeException x) {
                 logger.warn("Exception sending heartbeat", x);

@@ -54,7 +54,7 @@ public class AmazonDynamoDBLockClientOptions {
 
     /**
      * A builder for setting up an AmazonDynamoDBLockClientOptions object. By default, it is setup to have a partition key name of
-     * "key," a lease duration of 20 seconds, and a default heartbeat period of 5 seconds. These defaults can be overriden.
+     * "key," a lease duration of 20 seconds, and a default heartbeat period of 5 seconds. These defaults can be overridden.
      */
     public static class AmazonDynamoDBLockClientOptionsBuilder {
         private DynamoDbClient dynamoDBClient;
@@ -198,7 +198,7 @@ public class AmazonDynamoDBLockClientOptions {
         }
 
         /**
-         * Builds an AmazonDynamoDBLockClientOptions. If required parametes are
+         * Builds an AmazonDynamoDBLockClientOptions. If required parameters are
          * not set, will throw an IllegalArgumentsException.
          *
          * @return Returns the AmazonDynamoDBLockClientOptions which can be
