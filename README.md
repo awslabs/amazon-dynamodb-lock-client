@@ -153,7 +153,8 @@ currently unavailable.
 If the lock does not exist or if the lock has been acquired by the other machine and is stale (has passed the lease
 duration), this would successfully acquire the lock.
 
-If the lock has already been held by another worker and has not been released yet and the lease duration has not expired
+If the lock has already been held by another worker and has not been released yet
+and this worker does not know for certain that the lease duration has expired
 since the lock was last updated by the current owner, this will throw a LockCurrentlyUnavailableException exception.
 The caller can chose to immediately retry the lock acquisition or to delay the processing for that lock item by NACKing
 the message.
