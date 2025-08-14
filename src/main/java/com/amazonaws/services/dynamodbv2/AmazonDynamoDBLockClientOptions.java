@@ -272,7 +272,7 @@ public class AmazonDynamoDBLockClientOptions {
 
     /**
      * @return sortKeyName
-     * The sort key name. If this is set to Optional.absent(), then it means that the table only uses a partition key.
+     * The sort key name. If this is set to Optional.empty(), then it means that the table only uses a partition key.
      */
     Optional<String> getSortKeyName() {
         return this.sortKeyName;
