@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -52,6 +53,7 @@ public class AcquireLockOptions {
      * optionally back-off and retry and to acquire the lock.
      */
     private final boolean shouldSkipBlockingWait;
+    private final ThreadFactory threadFactory;
 
     /**
      * A builder for setting up an AcquireLockOptions object. This allows clients to configure
@@ -77,8 +79,18 @@ public class AcquireLockOptions {
         private Optional<Runnable> sessionMonitorCallback;
         private boolean isSessionMonitorSet = false;
         private boolean shouldSkipBlockingWait;
+        private ThreadFactory threadFactory;
 
-        AcquireLockOptionsBuilder(final String partitionKey) {
+        /**
+         * Produces a new ThreadFactory that creates threads with the default settings.
+         *
+         * @return a new ThreadFactory that creates threads with the default settings
+         */
+        private static ThreadFactory threadFactory() {
+            return Thread::new;
+        }
+
+        AcquireLockOptionsBuilder(final String partitionKey, final ThreadFactory threadFactory) {
             this.partitionKey = partitionKey;
             this.additionalAttributes = new HashMap<>();
             this.sortKey = Optional.empty();
@@ -90,6 +102,7 @@ public class AcquireLockOptions {
             this.shouldSkipBlockingWait = false;
             this.acquireReleasedLocksConsistently = false;
             this.reentrant = false;
+            this.threadFactory = threadFactory == null ? threadFactory() : threadFactory;
         }
 
         /**
@@ -327,13 +340,13 @@ public class AcquireLockOptions {
             final Optional<SessionMonitor> sessionMonitor;
             if (this.isSessionMonitorSet) {
                 Objects.requireNonNull(this.timeUnit, "timeUnit must not be null if sessionMonitor is non-null");
-                sessionMonitor = Optional.of(new SessionMonitor(this.timeUnit.toMillis(this.safeTimeWithoutHeartbeat), this.sessionMonitorCallback));
+                sessionMonitor = Optional.of(new SessionMonitor(this.timeUnit.toMillis(this.safeTimeWithoutHeartbeat), this.sessionMonitorCallback, this.threadFactory));
             } else {
                 sessionMonitor = Optional.empty();
             }
             return new AcquireLockOptions(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease, this.acquireOnlyIfLockAlreadyExists,
                     this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit, this.additionalAttributes, sessionMonitor,
-                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
+                    this.updateExistingLockRecord, this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant, this.threadFactory);
         }
 
         @Override
@@ -342,7 +355,7 @@ public class AcquireLockOptions {
                 + this.replaceData + ", deleteLockOnRelease=" + this.deleteLockOnRelease + ", refreshPeriod=" + this.refreshPeriod + ", additionalTimeToWaitForLock="
                 + this.additionalTimeToWaitForLock + ", timeUnit=" + this.timeUnit + ", additionalAttributes=" + this.additionalAttributes + ", safeTimeWithoutHeartbeat="
                 + this.safeTimeWithoutHeartbeat + ", sessionMonitorCallback=" + this.sessionMonitorCallback + ", acquireReleasedLocksConsistently="
-                + this.acquireReleasedLocksConsistently + ", reentrant=" + this.reentrant+ ")";
+                + this.acquireReleasedLocksConsistently + ", reentrant=" + this.reentrant + ", threadFactory= " + this.threadFactory + ")";
         }
     }
 
@@ -354,13 +367,26 @@ public class AcquireLockOptions {
      * @return a builder for an AquireLockOptions object
      */
     public static AcquireLockOptionsBuilder builder(final String partitionKey) {
-        return new AcquireLockOptionsBuilder(partitionKey);
+        return new AcquireLockOptionsBuilder(partitionKey, null);
+    }
+
+    /**
+     * Creates a new version of AcquireLockOptionsBuilder using the partition key as well as a ThreadFactory, which
+     * will be used for spawning related threads.
+     *
+     * @param partitionKey The partition key under which the lock will be acquired.
+     * @param threadFactory The factory to create related threads.
+     * @return
+     */
+    public static AcquireLockOptionsBuilder builder(final String partitionKey, final ThreadFactory threadFactory) {
+        return new AcquireLockOptionsBuilder(partitionKey, threadFactory);
     }
 
     private AcquireLockOptions(final String partitionKey, final Optional<String> sortKey, final Optional<ByteBuffer> data, final Boolean replaceData,
        final Boolean deleteLockOnRelease, final Boolean acquireOnlyIfLockAlreadyExists, final Long refreshPeriod, final Long additionalTimeToWaitForLock,
        final TimeUnit timeUnit, final Map<String, AttributeValue> additionalAttributes, final Optional<SessionMonitor> sessionMonitor,
-       final Boolean updateExistingLockRecord, final Boolean shouldSkipBlockingWait, final Boolean acquireReleasedLocksConsistently, Boolean reentrant) {
+       final Boolean updateExistingLockRecord, final Boolean shouldSkipBlockingWait, final Boolean acquireReleasedLocksConsistently, Boolean reentrant,
+       final ThreadFactory threadFactory) {
        this.partitionKey = partitionKey;
        this.sortKey = sortKey;
        this.data = data;
@@ -376,6 +402,7 @@ public class AcquireLockOptions {
        this.shouldSkipBlockingWait = shouldSkipBlockingWait;
        this.acquireReleasedLocksConsistently = acquireReleasedLocksConsistently;
        this.reentrant = reentrant;
+       this.threadFactory = threadFactory;
     }
 
     String getPartitionKey() {
@@ -428,6 +455,10 @@ public class AcquireLockOptions {
         return this.additionalAttributes;
     }
 
+    ThreadFactory getThreadFactory() {
+        return this.threadFactory;
+    }
+
     /**
      * Constructs a SessionMonitor object for LockItem instantiation
      *
@@ -460,7 +491,8 @@ public class AcquireLockOptions {
                 && Objects.equals(this.updateExistingLockRecord, otherOptions.updateExistingLockRecord)
                 && Objects.equals(this.shouldSkipBlockingWait, otherOptions.shouldSkipBlockingWait)
                 && Objects.equals(this.acquireReleasedLocksConsistently, otherOptions.acquireReleasedLocksConsistently)
-                && Objects.equals(this.reentrant, otherOptions.reentrant);
+                && Objects.equals(this.reentrant, otherOptions.reentrant)
+                && Objects.equals(this.threadFactory, otherOptions.threadFactory);
     }
 
     @Override
@@ -468,7 +500,7 @@ public class AcquireLockOptions {
         return Objects.hash(this.partitionKey, this.sortKey, this.data, this.replaceData, this.deleteLockOnRelease,
                 this.acquireOnlyIfLockAlreadyExists, this.refreshPeriod, this.additionalTimeToWaitForLock, this.timeUnit,
                 this.additionalAttributes, this.sessionMonitor, this.updateExistingLockRecord,
-                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant);
+                this.shouldSkipBlockingWait, this.acquireReleasedLocksConsistently, this.reentrant, this.threadFactory);
 
     }
 
