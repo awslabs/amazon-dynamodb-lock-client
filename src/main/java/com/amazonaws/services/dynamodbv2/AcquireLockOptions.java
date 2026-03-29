@@ -431,7 +431,7 @@ public class AcquireLockOptions {
     /**
      * Constructs a SessionMonitor object for LockItem instantiation
      *
-     * @return <code>Optional.absent()</code> if no call to
+     * @return <code>Optional.empty()</code> if no call to
      * {with,set}SessionMonitor was made, else a SessionMonitor object
      * with the desired properties
      */

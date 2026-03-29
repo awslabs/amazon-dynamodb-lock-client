@@ -58,7 +58,7 @@ public class LockItem implements Closeable {
      * @param client                        The AmazonDynamoDBLockClient object associated with this lock
      * @param partitionKey                  The key representing the lock
      * @param sortKey                       The sort key, if the DynamoDB table supports sort keys (or
-     *                                      Optional.absent otherwise)
+     *                                      Optional.empty otherwise)
      * @param data                          The data stored in the lock (can be null)
      * @param deleteLockItemOnClose         Whether or not to delete the lock item when releasing it
      * @param ownerName                     The owner associated with the lock
