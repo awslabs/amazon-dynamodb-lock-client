@@ -941,7 +941,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private Map<String, AttributeValue> getKeys(String partitionKey, Optional<String> sortKey) {
         final Map<String, AttributeValue> key = new HashMap<>();
         key.put(this.partitionKeyName, AttributeValue.builder().s(partitionKey).build());
-        if (sortKey.isPresent()) {
+        if (sortKey.isPresent() && this.sortKeyName.isPresent()) {
             key.put(this.sortKeyName.get(), AttributeValue.builder().s(sortKey.get()).build());
         }
         return key;
@@ -1298,7 +1298,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private GetItemResponse readFromDynamoDB(final String key, final Optional<String> sortKey) {
         final Map<String, AttributeValue> dynamoDBKey = new HashMap<>();
         dynamoDBKey.put(this.partitionKeyName, AttributeValue.builder().s(key).build());
-        if (this.sortKeyName.isPresent()) {
+        if (this.sortKeyName.isPresent() && sortKey.isPresent()) {
             dynamoDBKey.put(this.sortKeyName.get(), AttributeValue.builder().s(sortKey.get()).build());
         }
         final GetItemRequest getItemRequest = GetItemRequest.builder().tableName(tableName).key(dynamoDBKey)
