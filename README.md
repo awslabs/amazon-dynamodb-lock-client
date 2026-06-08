@@ -107,11 +107,14 @@ releaseLock() or lockItem.close()
 ### Acquire lock with timeout
 You can acquire a lock via two different methods: acquireLock or tryAcquireLock. The difference between the
 two methods is that tryAcquireLock will return Optional.absent() if the lock was not acquired, whereas
-acquireLock will throw a LockNotGrantedException. Both methods provide optional parameters where you can specify
-an additional timeout for acquiring the lock. Then they will try to acquire the lock for that amount of time
-before giving up. They do this by continually polling DynamoDB according to an interval you set up. Remember that
-acquireLock/tryAcquireLock will always poll DynamoDB for at least the leaseDuration period before giving up,
-because this is the only way it will be able to expire stale locks.
+acquireLock will throw a LockNotGrantedException. When `shouldSkipBlockingWait` is true, acquireLock can instead
+throw LockCurrentlyUnavailableException if the lock is currently held and the client did not wait long enough to
+determine that it is stale. tryAcquireLock catches both exceptions and returns Optional.absent(). Both methods
+provide optional parameters where you can specify an additional timeout for acquiring the lock. Then they will try
+to acquire the lock for that amount of time before giving up. They do this by continually polling DynamoDB according
+to an interval you set up. Remember that acquireLock/tryAcquireLock will always poll DynamoDB for at least the
+leaseDuration period before giving up, unless `shouldSkipBlockingWait` is true, because this is the only way it will
+be able to expire stale locks.
 
 This example will poll DynamoDB every second for 5 additional seconds (beyond the lease duration period),
 trying to acquire a lock:

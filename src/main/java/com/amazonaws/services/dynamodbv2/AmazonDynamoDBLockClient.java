@@ -232,12 +232,43 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     private final long heartbeatPeriodInMilliseconds;
     private final boolean holdLockOnServiceUnavailable;
     private final String ownerName;
+    private final int maxLockObservationCacheSize;
     private final ConcurrentHashMap<String, LockItem> locks;
-    private final ConcurrentHashMap<String, LockItem> notMyLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, LockObservation> notMyLocks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Thread> sessionMonitors;
     private final Optional<Thread> backgroundThread;
     private final Function<String, ThreadFactory> namedThreadCreator;
     private volatile boolean shuttingDown = false;
+
+    /*
+     * A lock read from DynamoDB starts its local expiration clock at the time of that read, so a freshly-read LockItem can never
+     * prove that an unchanged RVN is already stale. For shouldSkipBlockingWait, we only need to remember when this client first
+     * observed a non-owned RVN and its lease duration. Keeping a lightweight observation avoids retaining lock data, additional
+     * attributes, session monitor state, or a full LockItem for locks this client does not own.
+     */
+    private static final class LockObservation {
+        private final String recordVersionNumber;
+        private final long lookupTimeInMilliseconds;
+        private final long leaseDurationInMilliseconds;
+
+        private LockObservation(final LockItem lockItem) {
+            this.recordVersionNumber = lockItem.getRecordVersionNumber();
+            this.lookupTimeInMilliseconds = lockItem.getLookupTime();
+            this.leaseDurationInMilliseconds = lockItem.getLeaseDuration();
+        }
+
+        private boolean isSameRecordVersion(final LockItem lockItem) {
+            return this.recordVersionNumber.equals(lockItem.getRecordVersionNumber());
+        }
+
+        private boolean isExpired() {
+            return LockClientUtils.INSTANCE.millisecondTime() - this.lookupTimeInMilliseconds > this.leaseDurationInMilliseconds;
+        }
+
+        private boolean isOlderThan(final long now, final long ageInMilliseconds) {
+            return now - this.lookupTimeInMilliseconds > ageInMilliseconds;
+        }
+    }
 
     /* These are the keys that are stored in the DynamoDB table to keep track of the locks */
     protected static final String DATA = "data";
@@ -281,6 +312,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         this.sortKeyName = amazonDynamoDBLockClientOptions.getSortKeyName();
         this.namedThreadCreator = amazonDynamoDBLockClientOptions.getNamedThreadCreator();
         this.holdLockOnServiceUnavailable = amazonDynamoDBLockClientOptions.getHoldLockOnServiceUnavailable();
+        this.maxLockObservationCacheSize = amazonDynamoDBLockClientOptions.getMaxLockObservationCacheSize();
 
         if (amazonDynamoDBLockClientOptions.getCreateHeartbeatBackgroundThread()) {
             if (this.leaseDurationInMilliseconds < 2 * this.heartbeatPeriodInMilliseconds) {
@@ -402,6 +434,10 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      *
      * @param options A combination of optional arguments that may be passed in for acquiring the lock
      * @return the lock
+     * @throws LockNotGrantedException if the lock is not acquired before the configured wait time elapses, or if the
+     * lock cannot be acquired because of a failed conditional write or exceeded provisioned throughput.
+     * @throws LockCurrentlyUnavailableException if {@code shouldSkipBlockingWait} is true and the lock is currently
+     * held by another owner, or if another owner acquires the lock first during a skip-blocking acquire attempt.
      * @throws InterruptedException in case the Thread.sleep call was interrupted while waiting to refresh.
      */
     @SuppressWarnings("resource") // LockItem.close() does not need to be called until the lock is acquired, so we suppress the warning here.
@@ -470,31 +506,19 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                         throw new LockNotGrantedException("Lock does not exist.");
                     }
 
+                    boolean existingLockKnownExpired = false;
                     if (options.shouldSkipBlockingWait() && existingLock.isPresent() && !existingLock.get().isExpired()) {
-                        String id = existingLock.get().getUniqueIdentifier();
-                        // Let's check to see if this existingLock expired based on old data we cached.
-                        // Or cache it if we haven't seen this recordVersion before.
-                        boolean isReallyExpired = false;
-                        if (notMyLocks.containsKey(id) &&
-                              notMyLocks.get(id).getRecordVersionNumber()
-                              .equals(existingLock.get().getRecordVersionNumber())) {
-
-                          isReallyExpired = notMyLocks.get(id).isExpired();
-                          if (isReallyExpired) {
-                              // short circuit the waiting that we normally do.
-                              lockTryingToBeAcquired = notMyLocks.get(id);
-                          }
-                        } else {
-                            notMyLocks.put(id, existingLock.get());
-                        }
-
+                        final LockItem lockFromDynamoDB = existingLock.get();
                         /*
                          * The lock is being held by some one and is still not expired. And the caller explicitly said not to perform a blocking wait;
                          * We will throw back a lock not grant exception, so that the caller can retry if needed.
                          */
-                        if (!isReallyExpired) {
+                        existingLockKnownExpired = observedLockIsExpired(lockFromDynamoDB);
+                        if (!existingLockKnownExpired) {
                             throw new LockCurrentlyUnavailableException("The lock being requested is being held by another client.");
                         }
+                        // short circuit the waiting that we normally do.
+                        lockTryingToBeAcquired = lockFromDynamoDB;
                     }
 
                     Optional<ByteBuffer> newLockData = Optional.empty();
@@ -544,7 +568,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                     } else {
                         if (lockTryingToBeAcquired.getRecordVersionNumber().equals(existingLock.get().getRecordVersionNumber())) {
                             /* If the version numbers match, then we can acquire the lock, assuming it has already expired */
-                            if (lockTryingToBeAcquired.isExpired()) {
+                            if (existingLockKnownExpired || lockTryingToBeAcquired.isExpired()) {
                                 return upsertAndMonitorExpiredLock(options, key, sortKey, deleteLockOnRelease, sessionMonitor, existingLock, newLockData, item,
                                     recordVersionNumber);
                             }
@@ -559,6 +583,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 } catch (final ConditionalCheckFailedException conditionalCheckFailedException) {
                     /* Someone else acquired the lock while we tried to do so, so we throw an exception */
                     logger.debug("Someone else acquired the lock", conditionalCheckFailedException);
+                    if (options.shouldSkipBlockingWait()) {
+                        throw new LockCurrentlyUnavailableException("Could not acquire lock because someone else acquired it: ", conditionalCheckFailedException);
+                    }
                     throw new LockNotGrantedException("Could not acquire lock because someone else acquired it: ", conditionalCheckFailedException);
                 } catch (ProvisionedThroughputExceededException provisionedThroughputExceededException) {
                     /* Request exceeded maximum allowed provisioned throughput for the table
@@ -597,8 +624,41 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      */
     public boolean hasLock(final String key, final Optional<String> sortKey) {
         Objects.requireNonNull(sortKey, "Sort Key must not be null (can be Optional.empty())");
-        final LockItem localLock = this.locks.get(key + sortKey.orElse(""));
+        final LockItem localLock = this.locks.get(LockItem.uniqueIdentifier(key, sortKey));
         return localLock != null && !localLock.isExpired();
+    }
+
+    private boolean observedLockIsExpired(final LockItem lockFromDynamoDB) {
+        final String id = lockFromDynamoDB.getUniqueIdentifier();
+        final LockObservation cachedLock = notMyLocks.get(id);
+        if (cachedLock != null && cachedLock.isSameRecordVersion(lockFromDynamoDB)) {
+            return cachedLock.isExpired();
+        }
+
+        if (this.notMyLocks.size() >= this.maxLockObservationCacheSize) {
+            evictNotMyLocks();
+        }
+        this.notMyLocks.put(id, new LockObservation(lockFromDynamoDB));
+        return false;
+    }
+
+    private void evictNotMyLocks() {
+        final long now = LockClientUtils.INSTANCE.millisecondTime();
+        for (Entry<String, LockObservation> entry : this.notMyLocks.entrySet()) {
+            final LockObservation observation = entry.getValue();
+            if (observation.isOlderThan(now, observation.leaseDurationInMilliseconds * 2)) {
+                this.notMyLocks.remove(entry.getKey(), observation);
+            }
+        }
+
+        int remainingToRemove = this.notMyLocks.size() - this.maxLockObservationCacheSize + 1;
+        final Iterator<Entry<String, LockObservation>> iterator = this.notMyLocks.entrySet().iterator();
+        while (remainingToRemove > 0 && iterator.hasNext()) {
+            final Entry<String, LockObservation> entry = iterator.next();
+            if (this.notMyLocks.remove(entry.getKey(), entry.getValue())) {
+                remainingToRemove--;
+            }
+        }
     }
 
     private LockItem upsertAndMonitorExpiredLock(AcquireLockOptions options, String key, Optional<String> sortKey, boolean deleteLockOnRelease,
@@ -623,7 +683,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             if (sortKeyName.isPresent()) {
                 item.remove(sortKeyName.get());
             }
-            final String updateExpression = getUpdateExpressionAndUpdateNameValueMaps(item, expressionAttributeNames, expressionAttributeValues);
+            expressionAttributeNames.put(IS_RELEASED_PATH_EXPRESSION_VARIABLE, IS_RELEASED);
+            final String updateExpression = getUpdateExpressionAndUpdateNameValueMaps(item, expressionAttributeNames, expressionAttributeValues)
+                    + REMOVE_IS_RELEASED_UPDATE_EXPRESSION;
 
             final UpdateItemRequest updateItemRequest = UpdateItemRequest.builder().tableName(tableName).key(getItemKeys(existingLock.get()))
                     .updateExpression(updateExpression).expressionAttributeNames(expressionAttributeNames)
@@ -708,6 +770,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 new LockItem(this, key, sortKey, newLockData, deleteLockOnRelease, this.ownerName, this.leaseDurationInMilliseconds, lastUpdatedTime,
                         recordVersionNumber, !IS_RELEASED_INDICATOR, sessionMonitor, options.getAdditionalAttributes());
         this.locks.put(lockItem.getUniqueIdentifier(), lockItem);
+        this.notMyLocks.remove(lockItem.getUniqueIdentifier());
         this.tryAddSessionMonitor(lockItem.getUniqueIdentifier(), lockItem);
         return lockItem;
     }
@@ -776,6 +839,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             new LockItem(this, key, sortKey, newLockData, deleteLockOnRelease, this.ownerName, this.leaseDurationInMilliseconds, lastUpdatedTime,
                 recordVersionNumber, false, sessionMonitor, options.getAdditionalAttributes());
         this.locks.put(lockItem.getUniqueIdentifier(), lockItem);
+        this.notMyLocks.remove(lockItem.getUniqueIdentifier());
         this.tryAddSessionMonitor(lockItem.getUniqueIdentifier(), lockItem);
         return lockItem;
     }
@@ -815,8 +879,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
 
     /**
      * Attempts to acquire lock. If successful, returns the lock. Otherwise,
-     * returns Optional.empty(). For more details on behavior, please see
-     * {@code acquireLock}.
+     * returns Optional.empty(). This includes cases where {@code acquireLock}
+     * would throw {@code LockNotGrantedException} or {@code LockCurrentlyUnavailableException}.
+     * For more details on behavior, please see {@code acquireLock}.
      *
      * @param options The options to use when acquiring the lock.
      * @return the lock if successful.
@@ -825,6 +890,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     public Optional<LockItem> tryAcquireLock(final AcquireLockOptions options) throws InterruptedException {
         try {
             return Optional.of(this.acquireLock(options));
+        } catch (final LockCurrentlyUnavailableException x) {
+            return Optional.empty();
         } catch (final LockNotGrantedException x) {
             return Optional.empty();
         }
@@ -971,7 +1038,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      */
     public Optional<LockItem> getLock(final String key, final Optional<String> sortKey) {
         Objects.requireNonNull(sortKey, "Sort Key must not be null (can be Optional.empty())");
-        final LockItem localLock = this.locks.get(key + sortKey.orElse(""));
+        final LockItem localLock = this.locks.get(LockItem.uniqueIdentifier(key, sortKey));
         if (localLock != null) {
             return Optional.of(localLock);
         }

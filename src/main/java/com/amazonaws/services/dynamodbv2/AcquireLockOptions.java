@@ -212,6 +212,13 @@ public class AcquireLockOptions {
         /**
          * With this being true, the lock client will not block the running thread and wait for lock, rather will fast fail the request,
          * so that the caller can either choose to back-off and process the same request or start processing a new request.
+         * This only skips the blocking wait for a lock that is currently held by another owner. Other retryable failures, such as
+         * DynamoDB client exceptions or acquiring only if a missing lock already exists, may still follow the normal acquire retry
+         * behavior.
+         * A caller that repeatedly retries with the same AmazonDynamoDBLockClient instance can still acquire an otherwise stale lock
+         * once it observes the same record version number for longer than the lock lease duration.
+         * This stale-lock observation is kept in a bounded in-memory cache on the lock client. If that observation is evicted, the
+         * client must observe the same record version number again before it can acquire the stale lock with skip blocking wait enabled.
          *
          *
          * @param shouldSkipBlockingWait whether lock client should skip the logic to block the thread if lock is owned by another machine
@@ -476,4 +483,3 @@ public class AcquireLockOptions {
         return shouldSkipBlockingWait;
     }
 }
-

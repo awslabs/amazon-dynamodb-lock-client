@@ -181,6 +181,14 @@ public class LockItemTest {
         assertEquals(2000, lockItem.getLookupTime());
     }
 
+    @Test
+    public void uniqueIdentifier_whenPartitionAndSortKeyCouldConcatenateSame_returnsDifferentValues() {
+        assertFalse(LockItem.uniqueIdentifier("ab", Optional.of("c"))
+            .equals(LockItem.uniqueIdentifier("a", Optional.of("bc"))));
+        assertFalse(LockItem.uniqueIdentifier("abc", Optional.empty())
+            .equals(LockItem.uniqueIdentifier("ab", Optional.of("c"))));
+    }
+
     static LockItem createLockItem(AmazonDynamoDBLockClient lockClient) {
         return new LockItem(lockClient, "partitionKey",
             Optional.of("sortKey"),
