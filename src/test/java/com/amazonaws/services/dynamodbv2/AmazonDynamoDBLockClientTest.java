@@ -26,7 +26,9 @@ import static org.powermock.api.mockito.PowerMockito.when;
 import java.net.Inet4Address;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,12 +67,14 @@ import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
 import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.exception.SdkServiceException;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
+import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.DescribeTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DescribeTableResponse;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
@@ -765,6 +769,105 @@ public class AmazonDynamoDBLockClientTest {
         assertTrue(lockItemSpy.getLookupTime() > lastUpdatedTimeInMilliseconds);
         verify(lockItemSpy, times(1)).updateLookUpTime(anyLong());
         verify(lockItemSpy, times(0)).updateRecordVersionNumber(anyString(), anyLong(), anyLong());
+    }
+
+    @Test
+    public void close_whenReleasingOneLockFails_releasesRemainingLocks() throws Exception {
+        setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+        when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().build());
+        client.acquireLock(AcquireLockOptions.builder("lock1").build());
+        client.acquireLock(AcquireLockOptions.builder("lock2").build());
+
+        when(dynamodb.deleteItem(ArgumentMatchers.<DeleteItemRequest>any()))
+            .thenThrow(SdkClientException.builder().message("network failure").build())
+            .thenReturn(null);
+
+        client.close();
+
+        verify(dynamodb, times(2)).deleteItem(ArgumentMatchers.<DeleteItemRequest>any());
+    }
+
+    @Test
+    public void sendHeartbeat_whenLockIsExpired_stopsSessionMonitorThread() throws Exception {
+        setOwnerNameToUuid();
+        List<Thread> createdThreads = new ArrayList<>();
+        AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(
+            getLockClientBuilder(recordingThreadCreator(createdThreads)).build());
+        when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().build());
+        LockItem lockItem = client.acquireLock(sessionMonitorOptions());
+
+        assertEquals(1, createdThreads.size());
+        Thread monitorThread = createdThreads.get(0);
+        assertTrue(monitorThread.isAlive());
+
+        lockItem.updateLookUpTime(LockClientUtils.INSTANCE.millisecondTime() - 20000L); //lease duration is 10000 ms
+        try {
+            client.sendHeartbeat(lockItem);
+            fail("expected LockNotGrantedException");
+        } catch (LockNotGrantedException expected) {
+        }
+
+        assertFalse(monitorThread.isAlive());
+        client.close();
+    }
+
+    @Test
+    public void sendHeartbeat_whenLockIsStolen_stopsSessionMonitorThread() throws Exception {
+        setOwnerNameToUuid();
+        List<Thread> createdThreads = new ArrayList<>();
+        AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(
+            getLockClientBuilder(recordingThreadCreator(createdThreads)).build());
+        when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().build());
+        LockItem lockItem = client.acquireLock(sessionMonitorOptions());
+
+        assertEquals(1, createdThreads.size());
+        Thread monitorThread = createdThreads.get(0);
+        assertTrue(monitorThread.isAlive());
+
+        when(dynamodb.updateItem(ArgumentMatchers.<UpdateItemRequest>any()))
+            .thenThrow(ConditionalCheckFailedException.builder().message("stolen").build());
+        try {
+            client.sendHeartbeat(lockItem);
+            fail("expected LockNotGrantedException");
+        } catch (LockNotGrantedException expected) {
+        }
+
+        assertFalse(monitorThread.isAlive());
+        client.close();
+    }
+
+    @Test
+    public void acquireLock_whenReacquiringSameLock_stopsPreviousSessionMonitorThread() throws Exception {
+        setOwnerNameToUuid();
+        List<Thread> createdThreads = new ArrayList<>();
+        AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(
+            getLockClientBuilder(recordingThreadCreator(createdThreads)).build());
+        when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().build());
+        client.acquireLock(sessionMonitorOptions());
+        client.acquireLock(sessionMonitorOptions());
+
+        assertEquals(2, createdThreads.size());
+        assertFalse("previous acquisition's session monitor should be stopped", createdThreads.get(0).isAlive());
+        assertTrue("current acquisition's session monitor should be running", createdThreads.get(1).isAlive());
+        client.close();
+    }
+
+    private static AcquireLockOptions sessionMonitorOptions() {
+        //safe time must be greater than the heartbeat period (3000 ms) and less than the lease duration (10000 ms)
+        return AcquireLockOptions.builder(PARTITION_KEY)
+            .withSessionMonitor(5000L, Optional.of(() -> {
+            }))
+            .withTimeUnit(TimeUnit.MILLISECONDS)
+            .build();
+    }
+
+    private static Function<String, ThreadFactory> recordingThreadCreator(final List<Thread> createdThreads) {
+        return threadName -> runnable -> {
+            final Thread thread = new Thread(runnable, threadName);
+            createdThreads.add(thread);
+            return thread;
+        };
     }
 
     private AmazonDynamoDBLockClient getLockClient() {
