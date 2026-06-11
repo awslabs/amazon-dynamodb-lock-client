@@ -319,7 +319,12 @@ public class LockItem implements Closeable {
      * Returns the unique identifier for the lock so it can be stored in a HashMap under that key
      */
     String getUniqueIdentifier() {
-        return this.partitionKey + this.sortKey.orElse("");
+        return uniqueIdentifier(this.partitionKey, this.sortKey);
+    }
+
+    static String uniqueIdentifier(final String partitionKey, final Optional<String> sortKey) {
+        return "pk:" + partitionKey.length() + ":" + partitionKey
+            + "|sk:" + sortKey.map(sk -> sk.length() + ":" + sk).orElse("null");
     }
 
     /**

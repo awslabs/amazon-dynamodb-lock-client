@@ -66,4 +66,27 @@ public class AmazonDynamoDBLockClientOptionsTest {
         LockItem lock = client.acquireLock(AcquireLockOptions.builder("asdf").build());
         assertEquals(uuid.toString(), lock.getOwnerName());
     }
+
+    @Test
+    public void build_whenMaxLockObservationCacheSizeNotSet_usesDefault() {
+        AmazonDynamoDBLockClientOptions options = AmazonDynamoDBLockClientOptions.builder(dynamodb, "table").build();
+
+        assertEquals(AmazonDynamoDBLockClientOptions.DEFAULT_MAX_LOCK_OBSERVATION_CACHE_SIZE, options.getMaxLockObservationCacheSize());
+    }
+
+    @Test
+    public void build_whenMaxLockObservationCacheSizeSet_usesValue() {
+        AmazonDynamoDBLockClientOptions options = AmazonDynamoDBLockClientOptions.builder(dynamodb, "table")
+            .withMaxLockObservationCacheSize(123)
+            .build();
+
+        assertEquals(Integer.valueOf(123), options.getMaxLockObservationCacheSize());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void build_whenMaxLockObservationCacheSizeIsZero_throwsIllegalArgumentException() {
+        AmazonDynamoDBLockClientOptions.builder(dynamodb, "table")
+            .withMaxLockObservationCacheSize(0)
+            .build();
+    }
 }

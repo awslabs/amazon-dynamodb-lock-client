@@ -51,6 +51,8 @@ import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 
 import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient
         .PK_EXISTS_AND_RVN_IS_THE_SAME_AND_IS_RELEASED_CONDITION;
+import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient.IS_RELEASED_PATH_EXPRESSION_VARIABLE;
+import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient.REMOVE_IS_RELEASED_UPDATE_EXPRESSION;
 import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient.RVN_VALUE_EXPRESSION_VARIABLE;
 import static org.junit.Assert.assertEquals;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -447,6 +449,159 @@ public class AmazonDynamoDBLockClientTest {
             .withDeleteLockOnRelease(false).build();
         client.acquireLock(acquireLockOptions);
     }
+
+    @Test
+    public void tryAcquireLock_whenLockAlreadyExistsAndIsNotReleased_andSkipBlockingWait_returnsEmpty()
+        throws InterruptedException {
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("100000").build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(item).build());
+        AcquireLockOptions acquireLockOptions = AcquireLockOptions.builder("customer1")
+            .withShouldSkipBlockingWait(true)
+            .withDeleteLockOnRelease(false).build();
+
+        Optional<LockItem> lockItem = client.tryAcquireLock(acquireLockOptions);
+
+        assertFalse(lockItem.isPresent());
+    }
+
+    @Test(expected = LockCurrentlyUnavailableException.class)
+    public void acquireLock_whenExpiredCachedLockIsConcurrentlyAcquired_andSkipBlockingWait_throwsUnavailable()
+        throws InterruptedException {
+        UUID uuid = setOwnerNameToUuid();
+        AmazonDynamoDBLockClient client = getLockClient();
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s(uuid.toString()).build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(item).build())
+            .thenReturn(GetItemResponse.builder().item(item).build());
+        doThrow(ConditionalCheckFailedException.builder().message("lost race").build())
+            .when(dynamodb).putItem(Mockito.<PutItemRequest>any());
+        AcquireLockOptions acquireLockOptions = AcquireLockOptions.builder("customer1")
+            .withShouldSkipBlockingWait(true)
+            .withDeleteLockOnRelease(false).build();
+
+        try {
+            client.acquireLock(acquireLockOptions);
+        } catch (LockCurrentlyUnavailableException e) {
+            // This is expected on the first observation, before the cached item expires.
+        }
+
+        Thread.sleep(2);
+        client.acquireLock(acquireLockOptions);
+    }
+
+    @Test(expected = LockCurrentlyUnavailableException.class)
+    public void acquireLock_whenExpiredCachedLockIsConcurrentlyUpdated_andSkipBlockingWait_throwsUnavailable()
+        throws InterruptedException {
+        AmazonDynamoDBLockClient client = getLockClient();
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s("rvn-1").build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(item).build())
+            .thenReturn(GetItemResponse.builder().item(item).build());
+        doThrow(ConditionalCheckFailedException.builder().message("lost race").build())
+            .when(dynamodb).updateItem(Mockito.<UpdateItemRequest>any());
+        AcquireLockOptions acquireLockOptions = AcquireLockOptions.builder("customer1")
+            .withShouldSkipBlockingWait(true)
+            .withUpdateExistingLockRecord(true)
+            .withDeleteLockOnRelease(false).build();
+
+        try {
+            client.acquireLock(acquireLockOptions);
+        } catch (LockCurrentlyUnavailableException e) {
+            // This is expected on the first observation, before the cached item expires.
+        }
+
+        Thread.sleep(2);
+        client.acquireLock(acquireLockOptions);
+    }
+
+    @Test
+    public void acquireLock_whenExpiredCachedLockIsUpdated_andUpdateExistingLockRecord_removesIsReleased()
+        throws InterruptedException {
+        AmazonDynamoDBLockClient client = getLockClient();
+        Map<String, AttributeValue> item = new HashMap<>(5);
+        item.put("customer", AttributeValue.builder().s("customer1").build());
+        item.put("ownerName", AttributeValue.builder().s("foobar").build());
+        item.put("recordVersionNumber", AttributeValue.builder().s("rvn-1").build());
+        item.put("leaseDuration", AttributeValue.builder().s("1").build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(item).build())
+            .thenReturn(GetItemResponse.builder().item(item).build());
+        AcquireLockOptions acquireLockOptions = AcquireLockOptions.builder("customer1")
+            .withShouldSkipBlockingWait(true)
+            .withUpdateExistingLockRecord(true)
+            .withDeleteLockOnRelease(false).build();
+
+        try {
+            client.acquireLock(acquireLockOptions);
+        } catch (LockCurrentlyUnavailableException e) {
+            // This is expected on the first observation, before the cached item expires.
+        }
+
+        Thread.sleep(2);
+        client.acquireLock(acquireLockOptions);
+
+        ArgumentCaptor<UpdateItemRequest> updateItemCaptor = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(dynamodb).updateItem(updateItemCaptor.capture());
+        UpdateItemRequest updateItemRequest = updateItemCaptor.getValue();
+        assertTrue(updateItemRequest.updateExpression().contains(REMOVE_IS_RELEASED_UPDATE_EXPRESSION.trim()));
+        assertEquals("isReleased", updateItemRequest.expressionAttributeNames().get(IS_RELEASED_PATH_EXPRESSION_VARIABLE));
+    }
+
+    @Test
+    public void acquireLock_whenRecordVersionChangesAfterCachedObservation_andSkipBlockingWait_observesNewVersionBeforeAcquiring()
+        throws InterruptedException {
+        AmazonDynamoDBLockClient client = getLockClient();
+        Map<String, AttributeValue> firstItem = new HashMap<>(5);
+        firstItem.put("customer", AttributeValue.builder().s("customer1").build());
+        firstItem.put("ownerName", AttributeValue.builder().s("foobar").build());
+        firstItem.put("recordVersionNumber", AttributeValue.builder().s("rvn-1").build());
+        firstItem.put("leaseDuration", AttributeValue.builder().s("1").build());
+        Map<String, AttributeValue> secondItem = new HashMap<>(5);
+        secondItem.put("customer", AttributeValue.builder().s("customer1").build());
+        secondItem.put("ownerName", AttributeValue.builder().s("foobar").build());
+        secondItem.put("recordVersionNumber", AttributeValue.builder().s("rvn-2").build());
+        secondItem.put("leaseDuration", AttributeValue.builder().s("1").build());
+        when(dynamodb.getItem(Mockito.<GetItemRequest>any()))
+            .thenReturn(GetItemResponse.builder().item(firstItem).build())
+            .thenReturn(GetItemResponse.builder().item(secondItem).build())
+            .thenReturn(GetItemResponse.builder().item(secondItem).build());
+        AcquireLockOptions acquireLockOptions = AcquireLockOptions.builder("customer1")
+            .withShouldSkipBlockingWait(true)
+            .withDeleteLockOnRelease(false).build();
+
+        try {
+            client.acquireLock(acquireLockOptions);
+        } catch (LockCurrentlyUnavailableException e) {
+            // This is expected on the first observation.
+        }
+
+        Thread.sleep(2);
+        try {
+            client.acquireLock(acquireLockOptions);
+        } catch (LockCurrentlyUnavailableException e) {
+            // The changed record version number should reset the stale observation.
+        }
+
+        Thread.sleep(2);
+        LockItem lockItem = client.acquireLock(acquireLockOptions);
+        Assert.assertNotNull("Failed to get lock item after observing the same record version long enough", lockItem);
+    }
+
     /*
      * Test case for the scenario, where the lock is being held by the first owner and the lock duration has not past
      * the lease duration. In this case, We should expect a LockAlreadyOwnedException when shouldSkipBlockingWait is set.

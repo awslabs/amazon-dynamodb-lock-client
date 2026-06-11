@@ -38,6 +38,7 @@ public class AmazonDynamoDBLockClientOptions {
     protected static final TimeUnit DEFAULT_TIME_UNIT = TimeUnit.SECONDS;
     protected static final Boolean DEFAULT_CREATE_HEARTBEAT_BACKGROUND_THREAD = true;
     protected static final Boolean DEFAULT_HOLD_LOCK_ON_SERVICE_UNAVAILABLE = false;
+    protected static final Integer DEFAULT_MAX_LOCK_OBSERVATION_CACHE_SIZE = 10000;
 
     private final DynamoDbClient dynamoDBClient;
     private final String tableName;
@@ -50,6 +51,7 @@ public class AmazonDynamoDBLockClientOptions {
     private final Boolean createHeartbeatBackgroundThread;
     private final Function<String, ThreadFactory> namedThreadCreator;
     private final Boolean holdLockOnServiceUnavailable;
+    private final Integer maxLockObservationCacheSize;
 
 
     /**
@@ -67,6 +69,7 @@ public class AmazonDynamoDBLockClientOptions {
         private TimeUnit timeUnit;
         private Boolean createHeartbeatBackgroundThread;
         private Boolean holdLockOnServiceUnavailable;
+        private Integer maxLockObservationCacheSize;
         private Function<String, ThreadFactory> namedThreadCreator;
 
         AmazonDynamoDBLockClientOptionsBuilder(final DynamoDbClient dynamoDBClient, final String tableName) {
@@ -101,6 +104,7 @@ public class AmazonDynamoDBLockClientOptions {
             this.ownerName = ownerName == null ? generateOwnerNameFromLocalhost() : ownerName;
             this.namedThreadCreator = namedThreadCreator == null ? namedThreadCreator() : namedThreadCreator;
             this.holdLockOnServiceUnavailable = DEFAULT_HOLD_LOCK_ON_SERVICE_UNAVAILABLE;
+            this.maxLockObservationCacheSize = DEFAULT_MAX_LOCK_OBSERVATION_CACHE_SIZE;
         }
 
         AmazonDynamoDBLockClientOptionsBuilder(final DynamoDbClient dynamoDBClient, final String tableName, final String ownerName) {
@@ -198,6 +202,18 @@ public class AmazonDynamoDBLockClientOptions {
         }
 
         /**
+         * @param maxLockObservationCacheSize Maximum number of lock observations to keep for shouldSkipBlockingWait stale lock detection.
+         *                                    This is an approximate maximum under concurrent access, and this value must be greater than zero.
+         *                                    If an observation is evicted, a skip-blocking-wait caller must observe the same record version
+         *                                    number again before it can acquire the stale lock.
+         * @return a reference to this builder for fluent method chaining
+         */
+        public AmazonDynamoDBLockClientOptionsBuilder withMaxLockObservationCacheSize(final Integer maxLockObservationCacheSize) {
+            this.maxLockObservationCacheSize = maxLockObservationCacheSize;
+            return this;
+        }
+
+        /**
          * Builds an AmazonDynamoDBLockClientOptions. If required parametes are
          * not set, will throw an IllegalArgumentsException.
          *
@@ -207,8 +223,13 @@ public class AmazonDynamoDBLockClientOptions {
         public AmazonDynamoDBLockClientOptions build() {
             Objects.requireNonNull(this.tableName, "Table Name must not be null");
             Objects.requireNonNull(this.ownerName, "Owner Name must not be null");
+            Objects.requireNonNull(this.maxLockObservationCacheSize, "Maximum lock observation cache size must not be null");
+            if (this.maxLockObservationCacheSize <= 0) {
+                throw new IllegalArgumentException("Maximum lock observation cache size must be greater than zero");
+            }
             return new AmazonDynamoDBLockClientOptions(this.dynamoDBClient, this.tableName, this.partitionKeyName, this.sortKeyName, this.ownerName, this.leaseDuration,
-                this.heartbeatPeriod, this.timeUnit, this.createHeartbeatBackgroundThread, this.namedThreadCreator, this.holdLockOnServiceUnavailable);
+                this.heartbeatPeriod, this.timeUnit, this.createHeartbeatBackgroundThread, this.namedThreadCreator, this.holdLockOnServiceUnavailable,
+                this.maxLockObservationCacheSize);
         }
 
         @Override
@@ -216,7 +237,8 @@ public class AmazonDynamoDBLockClientOptions {
             return "AmazonDynamoDBLockClientOptionsBuilder(dynamoDBClient=" + this.dynamoDBClient + ", tableName=" + this.tableName + ", partitionKeyName=" + this.partitionKeyName
                 + ", sortKeyName=" + this.sortKeyName + ", ownerName=" + this.ownerName + ", leaseDuration=" + this.leaseDuration + ", heartbeatPeriod=" + this.heartbeatPeriod
                 + ", timeUnit=" + this.timeUnit + ", createHeartbeatBackgroundThread=" + this.createHeartbeatBackgroundThread
-                + ", holdLockOnServiceUnavailable=" + this.holdLockOnServiceUnavailable + ")";
+                + ", holdLockOnServiceUnavailable=" + this.holdLockOnServiceUnavailable + ", maxLockObservationCacheSize="
+                + this.maxLockObservationCacheSize + ")";
         }
     }
 
@@ -235,7 +257,7 @@ public class AmazonDynamoDBLockClientOptions {
 
     private AmazonDynamoDBLockClientOptions(final DynamoDbClient dynamoDBClient, final String tableName, final String partitionKeyName, final Optional<String> sortKeyName,
         final String ownerName, final Long leaseDuration, final Long heartbeatPeriod, final TimeUnit timeUnit, final Boolean createHeartbeatBackgroundThread,
-        final Function<String, ThreadFactory> namedThreadCreator, final Boolean holdLockOnServiceUnavailable) {
+        final Function<String, ThreadFactory> namedThreadCreator, final Boolean holdLockOnServiceUnavailable, final Integer maxLockObservationCacheSize) {
         this.dynamoDBClient = dynamoDBClient;
         this.tableName = tableName;
         this.partitionKeyName = partitionKeyName;
@@ -247,6 +269,7 @@ public class AmazonDynamoDBLockClientOptions {
         this.createHeartbeatBackgroundThread = createHeartbeatBackgroundThread;
         this.namedThreadCreator = namedThreadCreator;
         this.holdLockOnServiceUnavailable = holdLockOnServiceUnavailable;
+        this.maxLockObservationCacheSize = maxLockObservationCacheSize;
     }
 
     /**
@@ -330,5 +353,12 @@ public class AmazonDynamoDBLockClientOptions {
      */
     Boolean getHoldLockOnServiceUnavailable() {
         return this.holdLockOnServiceUnavailable;
+    }
+
+    /**
+     * @return Approximate maximum number of lock observations to keep for shouldSkipBlockingWait stale lock detection.
+     */
+    Integer getMaxLockObservationCacheSize() {
+        return this.maxLockObservationCacheSize;
     }
 }
