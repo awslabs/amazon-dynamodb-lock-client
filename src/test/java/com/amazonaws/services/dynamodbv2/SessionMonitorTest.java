@@ -61,8 +61,15 @@ public class SessionMonitorTest {
     }
 
     @Test
-    public void hasCallback_whenCallbackNotNull_returnTrue() {
+    public void hasCallback_whenCallbackEmpty_returnFalse() {
         SessionMonitor sut = new SessionMonitor(1000, Optional.empty());
+        assertFalse(sut.hasCallback());
+    }
+
+    @Test
+    public void hasCallback_whenCallbackPresent_returnTrue() {
+        SessionMonitor sut = new SessionMonitor(1000, Optional.of(() -> {
+        }));
         assertTrue(sut.hasCallback());
     }
 }
