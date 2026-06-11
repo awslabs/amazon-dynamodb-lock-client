@@ -45,10 +45,12 @@ import com.amazonaws.services.dynamodbv2.model.LockNotGrantedException;
 import com.amazonaws.services.dynamodbv2.model.LockTableDoesNotExistException;
 import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 import software.amazon.awssdk.annotations.ThreadSafe;
+import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -996,6 +998,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             // should not cause existing clients problems, there
             // may be existing clients that depend on the monitor firing if they
             // get exceptions from this method.
+            lockItem.markReleased();
             this.removeKillSessionMonitor(lockItem.getUniqueIdentifier());
         }
         return true;
@@ -1015,13 +1018,16 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     }
 
     /**
-     * Releases all the locks currently held by the owner specified when creating this lock client
+     * Releases all the locks currently held by the owner specified when creating this lock client. Releasing a lock is
+     * best-effort here: a failure to release one lock (for example, because of a network error) must not prevent the
+     * remaining locks from being released.
      */
     private void releaseAllLocks() {
-        final Map<String, LockItem> locks = new HashMap<>(this.locks);
-        synchronized (locks) {
-            for (final Entry<String, LockItem> lockEntry : locks.entrySet()) {
-                this.releaseLock(lockEntry.getValue()); // TODO catch exceptions and report failure separately
+        for (final LockItem lockItem : new ArrayList<>(this.locks.values())) {
+            try {
+                this.releaseLock(lockItem);
+            } catch (final RuntimeException e) {
+                logger.warn("Failed to release lock " + lockItem.getUniqueIdentifier() + ", continuing to release the remaining locks", e);
             }
         }
     }
@@ -1227,10 +1233,20 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         final LockItem lockItem = options.getLockItem();
         if (lockItem.isExpired() || !lockItem.getOwnerName().equals(this.ownerName) || lockItem.isReleased()) {
             this.locks.remove(lockItem.getUniqueIdentifier());
+            // The lock is abandoned: also stop its session monitor so it cannot fire later for an acquisition
+            // that this client no longer tracks. By this point the lease has lapsed, so a configured danger-zone
+            // callback (safe time < lease duration) has already had its chance to fire.
+            this.removeKillSessionMonitor(lockItem.getUniqueIdentifier());
             throw new LockNotGrantedException("Cannot send heartbeat because lock is not granted");
         }
 
         synchronized (lockItem) {
+            if (lockItem.isExpired() || !lockItem.getOwnerName().equals(this.ownerName) || lockItem.isReleased()) {
+                this.locks.remove(lockItem.getUniqueIdentifier());
+                this.removeKillSessionMonitor(lockItem.getUniqueIdentifier());
+                throw new LockNotGrantedException("Cannot send heartbeat because lock is not granted");
+            }
+
             //Set up condition for UpdateItem. Basically any changes require:
             //1. I own the lock
             //2. I know the current version number
@@ -1288,10 +1304,12 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             } catch (final ConditionalCheckFailedException conditionalCheckFailedException) {
                 logger.debug("Someone else acquired the lock, so we will stop heartbeating it", conditionalCheckFailedException);
                 this.locks.remove(lockItem.getUniqueIdentifier());
+                // The lock was stolen, which can only happen after the lease lapsed, so the danger-zone callback has
+                // already had its chance to fire. Stop the monitor so it cannot fire later for this dead acquisition.
+                this.removeKillSessionMonitor(lockItem.getUniqueIdentifier());
                 throw new LockNotGrantedException("Someone else acquired the lock, so we will stop heartbeating it", conditionalCheckFailedException);
             } catch (AwsServiceException awsServiceException) {
-                if (holdLockOnServiceUnavailable
-                        && awsServiceException.awsErrorDetails().sdkHttpResponse().statusCode() == HttpStatusCode.SERVICE_UNAVAILABLE) {
+                if (holdLockOnServiceUnavailable && isServiceUnavailable(awsServiceException)) {
                     // When DynamoDB service is unavailable, other threads may get the same exception and no thread may have the lock.
                     // For systems which should always hold a lock on an item and it is okay for multiple threads to hold the lock,
                     // the lookUpTime of local state can be updated to make it believe that it still has the lock.
@@ -1302,6 +1320,20 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                 }
             }
         }
+    }
+
+    private static boolean isServiceUnavailable(final AwsServiceException awsServiceException) {
+        if (awsServiceException.statusCode() == HttpStatusCode.SERVICE_UNAVAILABLE) {
+            return true;
+        }
+
+        final AwsErrorDetails awsErrorDetails = awsServiceException.awsErrorDetails();
+        if (awsErrorDetails == null) {
+            return false;
+        }
+
+        final SdkHttpResponse sdkHttpResponse = awsErrorDetails.sdkHttpResponse();
+        return sdkHttpResponse != null && sdkHttpResponse.statusCode() == HttpStatusCode.SERVICE_UNAVAILABLE;
     }
 
     /**
@@ -1347,16 +1379,20 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      */
     @Override
     public void close() throws IOException {
-        // release the locks before interrupting the heartbeat thread to avoid partially updated/stale locks
-        this.releaseAllLocks();
-        if (this.backgroundThread.isPresent()) {
-            this.shuttingDown = true;
-            this.backgroundThread.get().interrupt();
-            try {
-                this.backgroundThread.get().join();
-            } catch (final InterruptedException e) {
-                logger.warn("Caught InterruptedException waiting for background thread to exit, interrupting current thread");
-                Thread.currentThread().interrupt();
+        try {
+            // release the locks before interrupting the heartbeat thread to avoid partially updated/stale locks
+            this.releaseAllLocks();
+        } finally {
+            // always stop the heartbeat thread, even if releasing a lock failed unexpectedly
+            if (this.backgroundThread.isPresent()) {
+                this.shuttingDown = true;
+                this.backgroundThread.get().interrupt();
+                try {
+                    this.backgroundThread.get().join();
+                } catch (final InterruptedException e) {
+                    logger.warn("Caught InterruptedException waiting for background thread to exit, interrupting current thread");
+                    Thread.currentThread().interrupt();
+                }
             }
         }
     }
@@ -1395,6 +1431,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     }
 
     private void tryAddSessionMonitor(final String lockName, final LockItem lock) {
+        // Kill any monitor left over from a previous acquisition of this lock, so it cannot fire for an
+        // acquisition that no longer exists and is not orphaned by the put below.
+        this.removeKillSessionMonitor(lockName);
         if (lock.hasSessionMonitor() && lock.hasCallback()) {
             final Thread monitorThread = lockSessionMonitorChecker(lockName, lock);
             monitorThread.setDaemon(true);
@@ -1404,8 +1443,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
     }
 
     private void removeKillSessionMonitor(final String monitorName) {
-        if (this.sessionMonitors.containsKey(monitorName)) {
-            final Thread monitor = this.sessionMonitors.remove(monitorName);
+        final Thread monitor = this.sessionMonitors.remove(monitorName);
+        if (monitor != null) {
             monitor.interrupt();
             try {
                 monitor.join();
@@ -1447,7 +1486,9 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                         Thread.sleep(millisUntilDangerZone);
                     } else {
                         lock.runSessionMonitor();
-                        sessionMonitors.remove(monitorName);
+                        // Only remove this thread's own entry: a newer acquisition may have registered its own monitor
+                        // under the same name, and that entry must not be removed.
+                        sessionMonitors.remove(monitorName, Thread.currentThread());
                         return;
                     }
                 } catch (final InterruptedException e) {
