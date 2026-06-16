@@ -41,7 +41,7 @@ final class SessionMonitor {
      */
     public SessionMonitor(final long safeTimeWithoutHeartbeatMillis, final Optional<Runnable> callback) {
         this.safeTimeWithoutHeartbeatMillis = safeTimeWithoutHeartbeatMillis;
-        this.callback = callback;
+        this.callback = callback == null ? Optional.empty() : callback;
     }
 
     /**
@@ -85,13 +85,13 @@ final class SessionMonitor {
     }
 
     /**
-     * Returns whether or not the callback is non-null
+     * Returns whether or not a callback was provided
      *
      * @return <code>true</code> if this SessionMonitor has a callback,
      * otherwise <code>false</code>
      */
     public boolean hasCallback() {
-        return this.callback != null;
+        return this.callback.isPresent();
     }
 
     /**

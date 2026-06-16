@@ -20,7 +20,6 @@ import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -193,7 +192,14 @@ public class LockItem implements Closeable {
     @Override
     public String toString() {
         String dataString = this.data
-            .map(byteBuffer -> new String(byteBuffer.array(), StandardCharsets.UTF_8))
+            .map(byteBuffer -> {
+                /* Copy via a read-only duplicate: the buffer may be read-only (no array() access) and may have a non-zero
+                 * position/offset, so reading the backing array directly would fail or return the wrong bytes. */
+                final ByteBuffer readOnlyBuffer = byteBuffer.asReadOnlyBuffer();
+                final byte[] bytes = new byte[readOnlyBuffer.remaining()];
+                readOnlyBuffer.get(bytes);
+                return new String(bytes, StandardCharsets.UTF_8);
+            })
             .orElse("");
         return String
             .format("LockItem{Partition Key=%s, Sort Key=%s, Owner Name=%s, Lookup Time=%d, Lease Duration=%d, "
@@ -203,15 +209,15 @@ public class LockItem implements Closeable {
     }
 
     /**
-     * Hash code of just the (key, ownerName) as that is what uniquely identifies this lock.
+     * Hash code of just the (key, sortKey, ownerName) as that is what uniquely identifies this lock.
      */
     @Override
     public int hashCode() {
-        return Arrays.hashCode(Arrays.asList(this.partitionKey, this.ownerName).toArray());
+        return Objects.hash(this.partitionKey, this.sortKey, this.ownerName);
     }
 
     /**
-     * Returns if two locks have the same (key, ownerName)
+     * Returns if two locks have the same (key, sortKey, ownerName)
      */
     @Override
     public boolean equals(final Object other) {
@@ -220,8 +226,9 @@ public class LockItem implements Closeable {
         }
 
         final LockItem otherLockItem = (LockItem) other;
-        /* key and ownerName should never be null due to a preconditions check */
-        return this.partitionKey.equals(otherLockItem.getPartitionKey()) && this.ownerName.equals(otherLockItem.getOwnerName());
+        /* key, sortKey and ownerName should never be null due to a preconditions check */
+        return this.partitionKey.equals(otherLockItem.getPartitionKey()) && this.sortKey.equals(otherLockItem.getSortKey())
+            && this.ownerName.equals(otherLockItem.getOwnerName());
     }
 
     /**
@@ -261,8 +268,8 @@ public class LockItem implements Closeable {
     /**
      * <p>
      * Ensures that this owner has the lock for a specified period of time. If the lock will expire in less than the amount of
-     * time passed in, then this method will do nothing. Otherwise, it will set the {@code leaseDuration} to that value and send a
-     * heartbeat, such that the lock will expire no sooner than after {@code leaseDuration} elapses.
+     * time passed in, then this method will set the {@code leaseDuration} to that value and send a heartbeat, such that the lock
+     * will expire no sooner than after {@code leaseDuration} elapses. Otherwise, this method will do nothing.
      * </p>
      * <p>
      * This method is not required if using heartbeats, because the client could simply call {@code isExpired} before every
@@ -293,7 +300,10 @@ public class LockItem implements Closeable {
      * client.
      */
     void updateRecordVersionNumber(final String recordVersionNumber, final long lastUpdateOfLock, final long leaseDurationToEnsureInMilliseconds) {
-        this.recordVersionNumber.replace(0, recordVersionNumber.length(), recordVersionNumber);
+        /* Clear before appending: replace(0, newValue.length(), newValue) is wrong when the new value is shorter than the
+         * old one (e.g. clearing the RVN with ""), as it leaves the old value's trailing characters in place. */
+        this.recordVersionNumber.setLength(0);
+        this.recordVersionNumber.append(recordVersionNumber);
         this.lookupTime.set(lastUpdateOfLock);
         this.leaseDuration.set(leaseDurationToEnsureInMilliseconds);
     }

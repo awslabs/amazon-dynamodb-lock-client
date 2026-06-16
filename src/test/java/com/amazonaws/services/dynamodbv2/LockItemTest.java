@@ -94,6 +94,50 @@ public class LockItemTest {
     }
 
     @Test
+    public void equals_differentSortKey_returnFalse() {
+        final LockItem differentSortKey = new LockItem(lockClient, "partitionKey",
+            Optional.of("differentSortKey"),
+            Optional.of(ByteBuffer.wrap("data".getBytes())),
+            false, //delete lock item on close
+            "ownerName",
+            1L, //lease duration
+            1000, //last updated time in milliseconds
+            "recordVersionNumber",
+            false, //released
+            Optional.of(new SessionMonitor(1000, Optional.empty())), //session monitor
+            new HashMap<>());
+        assertFalse(createLockItem(lockClient).equals(differentSortKey));
+        assertFalse(createLockItem(lockClient).hashCode() == differentSortKey.hashCode());
+    }
+
+    @Test
+    public void toString_whenDataBufferIsReadOnly_returnsData() {
+        final LockItem lockItem = new LockItem(lockClient, "partitionKey",
+            Optional.of("sortKey"),
+            Optional.of(ByteBuffer.wrap("data".getBytes()).asReadOnlyBuffer()),
+            false, //delete lock item on close
+            "ownerName",
+            1L, //lease duration
+            1000, //last updated time in milliseconds
+            "recordVersionNumber",
+            false, //released
+            Optional.empty(), //session monitor
+            new HashMap<>());
+        assertTrue(lockItem.toString().contains("Data=data"));
+    }
+
+    @Test
+    public void updateRecordVersionNumber_whenNewValueIsShorter_replacesEntireValue() {
+        final LockItem lockItem = createLockItem(lockClient);
+        lockItem.updateRecordVersionNumber("", 0, 0);
+        assertEquals("", lockItem.getRecordVersionNumber());
+
+        lockItem.updateRecordVersionNumber("short", 0, 0);
+        lockItem.updateRecordVersionNumber("x", 0, 0);
+        assertEquals("x", lockItem.getRecordVersionNumber());
+    }
+
+    @Test
     public void isExpired_whenIsReleasedTrue_returnTrue() {
         assertTrue(new LockItem(lockClient, "partitionKey",
             Optional.of("sortKey"),
