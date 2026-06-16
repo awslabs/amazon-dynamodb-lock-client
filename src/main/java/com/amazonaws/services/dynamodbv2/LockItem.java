@@ -40,7 +40,11 @@ public class LockItem implements Closeable {
     private Optional<ByteBuffer> data;
     private final String ownerName;
     private final boolean deleteLockItemOnClose;
-    private final boolean isReleased;
+
+    // This can change when a locally-held lock is released. It is volatile so other threads holding the same
+    // LockItem reference (for example, a manual heartbeat or ensure caller) observe that release without requiring
+    // every read path to synchronize on the LockItem monitor.
+    private volatile boolean isReleased;
     private final AtomicLong lookupTime;
     private final StringBuffer recordVersionNumber;
     private final AtomicLong leaseDuration;
@@ -250,6 +254,10 @@ public class LockItem implements Closeable {
      */
     boolean isReleased() {
         return this.isReleased;
+    }
+
+    void markReleased() {
+        this.isReleased = true;
     }
 
     /**
