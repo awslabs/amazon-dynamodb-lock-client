@@ -19,6 +19,9 @@ import static org.junit.Assert.assertTrue;
 import static org.powermock.api.mockito.PowerMockito.when;
 
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -52,6 +55,21 @@ public class SessionMonitorTest {
     public void runCallback_whenNotPresent_doesNothing() {
         SessionMonitor sut = new SessionMonitor(1000, Optional.empty());
         sut.runCallback();
+    }
+
+    @Test
+    public void runCallback_whenPresent_runsOnceOnDaemonThread() throws InterruptedException {
+        CountDownLatch callbackStarted = new CountDownLatch(1);
+        AtomicBoolean callbackRanOnDaemonThread = new AtomicBoolean();
+        SessionMonitor sut = new SessionMonitor(1000, Optional.of(() -> {
+            callbackRanOnDaemonThread.set(Thread.currentThread().isDaemon());
+            callbackStarted.countDown();
+        }));
+
+        sut.runCallback();
+
+        assertTrue(callbackStarted.await(1, TimeUnit.SECONDS));
+        assertTrue(callbackRanOnDaemonThread.get());
     }
 
     @Test

@@ -53,6 +53,8 @@ import com.amazonaws.services.dynamodbv2.util.LockClientUtils;
 
 import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient
         .PK_EXISTS_AND_RVN_IS_THE_SAME_AND_IS_RELEASED_CONDITION;
+import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient
+        .PK_EXISTS_AND_RVN_IS_THE_SAME_CONDITION;
 import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient.IS_RELEASED_PATH_EXPRESSION_VARIABLE;
 import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient.REMOVE_IS_RELEASED_UPDATE_EXPRESSION;
 import static com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient.RVN_VALUE_EXPRESSION_VARIABLE;
@@ -564,6 +566,8 @@ public class AmazonDynamoDBLockClientTest {
         UpdateItemRequest updateItemRequest = updateItemCaptor.getValue();
         assertTrue(updateItemRequest.updateExpression().contains(REMOVE_IS_RELEASED_UPDATE_EXPRESSION.trim()));
         assertEquals("isReleased", updateItemRequest.expressionAttributeNames().get(IS_RELEASED_PATH_EXPRESSION_VARIABLE));
+        assertEquals(PK_EXISTS_AND_RVN_IS_THE_SAME_CONDITION, updateItemRequest.conditionExpression());
+        assertEquals("rvn-1", updateItemRequest.expressionAttributeValues().get(RVN_VALUE_EXPRESSION_VARIABLE).s());
     }
 
     @Test
@@ -799,15 +803,21 @@ public class AmazonDynamoDBLockClientTest {
 
     @Test
     public void sendHeartbeat_afterReleaseWithoutDelete_throwsLockNotGrantedExceptionAndDoesNotUpdateDynamoDbAgain() {
-        UUID uuid = setOwnerNameToUuid();
+        setOwnerNameToUuid();
         AmazonDynamoDBLockClient client = getLockClient();
-        long lastUpdatedTimeInMilliseconds = LockClientUtils.INSTANCE.millisecondTime();
-        LockItem item = new LockItem(client, "a", Optional.empty(), Optional.of(ByteBuffer.wrap("data".getBytes())),
-            false, uuid.toString(), 10000L, lastUpdatedTimeInMilliseconds,
-            "rvn", false, Optional.empty(), null);
+        when(dynamodb.getItem(ArgumentMatchers.<GetItemRequest>any())).thenReturn(GetItemResponse.builder().build());
+        LockItem item;
+        try {
+            item = client.acquireLock(AcquireLockOptions.builder("a").withDeleteLockOnRelease(false).build());
+        } catch (InterruptedException e) {
+            throw new AssertionError(e);
+        }
+
+        assertTrue(client.hasLock("a", Optional.empty()));
 
         assertTrue(client.releaseLock(ReleaseLockOptions.builder(item).withDeleteLock(false).build()));
         assertTrue(item.isReleased());
+        assertFalse(client.hasLock("a", Optional.empty()));
 
         try {
             client.sendHeartbeat(SendHeartbeatOptions.builder(item).build());
@@ -898,6 +908,26 @@ public class AmazonDynamoDBLockClientTest {
         assertFalse("previous acquisition's session monitor should be stopped", createdThreads.get(0).isAlive());
         assertTrue("current acquisition's session monitor should be running", createdThreads.get(1).isAlive());
         client.close();
+        assertFalse("close should stop the current session monitor", createdThreads.get(1).isAlive());
+    }
+
+    @Test
+    public void close_stopsHeartbeatThread() throws Exception {
+        setOwnerNameToUuid();
+        List<Thread> createdThreads = new ArrayList<>();
+        AmazonDynamoDBLockClient client = new AmazonDynamoDBLockClient(
+            getLockClientBuilder(recordingThreadCreator(createdThreads))
+                .withHeartbeatPeriod(100L)
+                .withLeaseDuration(1000L)
+                .withCreateHeartbeatBackgroundThread(true)
+                .build());
+
+        assertEquals(1, createdThreads.size());
+        assertTrue(createdThreads.get(0).isAlive());
+
+        client.close();
+
+        assertFalse(createdThreads.get(0).isAlive());
     }
 
     private static AcquireLockOptions sessionMonitorOptions() {
