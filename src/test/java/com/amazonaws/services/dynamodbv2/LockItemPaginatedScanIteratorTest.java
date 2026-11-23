@@ -14,6 +14,12 @@
  */
 package com.amazonaws.services.dynamodbv2;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -63,5 +69,40 @@ public class LockItemPaginatedScanIteratorTest {
             .thenReturn(ScanResponse.builder().items(Collections.emptyList()).count(0).build());
         sut.next();
         sut.next();
+    }
+
+    @Test
+    public void next_whenMultiplePages_returnsAllItemsAndStopsAtTerminalPage() {
+        LockItemPaginatedScanIterator sut = new LockItemPaginatedScanIterator(dynamodb, ScanRequest.builder().build(), factory);
+        Map<String, AttributeValue> pageItem = new HashMap<>();
+        Map<String, AttributeValue> lastEvaluatedKey = new HashMap<>();
+        lastEvaluatedKey.put("has_next", AttributeValue.builder().s("true").build());
+        LockItem first = mock(LockItem.class);
+        LockItem second = mock(LockItem.class);
+
+        when(factory.create(ArgumentMatchers.<Map<String, AttributeValue>>any())).thenReturn(first).thenReturn(second);
+        when(dynamodb.scan(ArgumentMatchers.<ScanRequest>any()))
+            .thenReturn(ScanResponse.builder().items(Collections.singletonList(pageItem)).count(1)
+                .lastEvaluatedKey(lastEvaluatedKey).build())
+            .thenReturn(ScanResponse.builder().items(Collections.singletonList(pageItem)).count(1).build());
+
+        assertTrue(sut.hasNext());
+        assertEquals(first, sut.next());
+        assertTrue(sut.hasNext());
+        assertEquals(second, sut.next());
+        assertFalse(sut.hasNext());
+        assertFalse(sut.hasNext());
+        verify(dynamodb, times(2)).scan(ArgumentMatchers.<ScanRequest>any());
+    }
+
+    @Test
+    public void hasNext_whenFirstPageIsEmpty_returnsFalseWithoutReloading() {
+        LockItemPaginatedScanIterator sut = new LockItemPaginatedScanIterator(dynamodb, ScanRequest.builder().build(), factory);
+        when(dynamodb.scan(ArgumentMatchers.<ScanRequest>any()))
+            .thenReturn(ScanResponse.builder().items(Collections.emptyList()).count(0).build());
+
+        assertFalse(sut.hasNext());
+        assertFalse(sut.hasNext());
+        verify(dynamodb, times(1)).scan(ArgumentMatchers.<ScanRequest>any());
     }
 }

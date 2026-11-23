@@ -32,6 +32,8 @@ import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -198,6 +200,18 @@ public class LockItemPaginatedQueryIteratorTest extends TestCase {
     assertTrue(sut.hasNext());
     sut.next();
     assertFalse(sut.hasNext());
+  }
+
+  @Test
+  public void hasNext_whenFirstPageIsEmpty_shouldBeTerminal() {
+    QueryRequest request = QueryRequest.builder().build();
+    LockItemPaginatedQueryIterator sut = new LockItemPaginatedQueryIterator(dynamodb, request, factory);
+    when(dynamodb.query(ArgumentMatchers.<QueryRequest>any()))
+        .thenReturn(QueryResponse.builder().items(new ArrayList<>()).count(0).build());
+
+    assertFalse(sut.hasNext());
+    assertFalse(sut.hasNext());
+    verify(dynamodb, times(1)).query(ArgumentMatchers.<QueryRequest>any());
   }
 
 }

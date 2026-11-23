@@ -153,6 +153,18 @@ public class LockItemTest {
     }
 
     @Test
+    public void isExpired_whenLeaseHasElapsed_returnTrue() {
+        assertTrue(new LockItem(lockClient, "partitionKey", Optional.empty(), Optional.empty(),
+            false, "ownerName", 1L, 0L, "recordVersionNumber", false, Optional.empty(), new HashMap<>()).isExpired());
+    }
+
+    @Test
+    public void isExpired_whenLeaseHasNotElapsed_returnFalse() {
+        assertFalse(new LockItem(lockClient, "partitionKey", Optional.empty(), Optional.empty(),
+            false, "ownerName", Long.MAX_VALUE, 0L, "recordVersionNumber", false, Optional.empty(), new HashMap<>()).isExpired());
+    }
+
+    @Test
     public void isReleased_whenIsReleasedFalseInConstructor_returnsFalse() {
         assertFalse(createLockItem(lockClient).isReleased());
     }
@@ -170,6 +182,36 @@ public class LockItemTest {
             true, //released
             Optional.empty(), //session monitor
             new HashMap<>()).ensure(2L, TimeUnit.MILLISECONDS);
+    }
+
+    @Test
+    public void ensure_whenLeaseHasEnoughTime_doesNotSendHeartbeat() {
+        LockItem lockItem = new LockItem(lockClient, "partitionKey", Optional.empty(), Optional.empty(),
+            false, "ownerName", Long.MAX_VALUE, 0L, "recordVersionNumber", false, Optional.empty(), new HashMap<>());
+
+        lockItem.ensure(1L, TimeUnit.MILLISECONDS);
+
+        Mockito.verify(lockClient, Mockito.never()).sendHeartbeat(Mockito.any(SendHeartbeatOptions.class));
+    }
+
+    @Test
+    public void ensure_whenLeaseIsAlmostExpired_sendsHeartbeat() {
+        LockItem lockItem = new LockItem(lockClient, "partitionKey", Optional.empty(), Optional.empty(),
+            false, "ownerName", 1L, 0L, "recordVersionNumber", false, Optional.empty(), new HashMap<>());
+
+        lockItem.ensure(1L, TimeUnit.MILLISECONDS);
+
+        Mockito.verify(lockClient).sendHeartbeat(Mockito.any(SendHeartbeatOptions.class));
+    }
+
+    @Test
+    public void markReleased_makesLockExpired() {
+        LockItem lockItem = createLockItem(lockClient);
+
+        lockItem.markReleased();
+
+        assertTrue(lockItem.isReleased());
+        assertTrue(lockItem.isExpired());
     }
 
     @Test(expected = IllegalStateException.class)
